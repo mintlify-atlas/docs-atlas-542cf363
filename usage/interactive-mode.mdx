@@ -1,0 +1,157 @@
+---
+title: "Interactive Mode"
+description: "How to use Claude Code's interactive REPL for back-and-forth conversations, plan-based workflows, and real-time cost tracking."
+---
+
+Claude Code runs as an interactive REPL (Read-Eval-Print Loop) — a persistent session where you type requests, Claude responds and acts on your codebase, and the conversation continues until you exit.
+
+## Starting a session
+
+Launch Claude Code from your terminal in any directory:
+
+```bash
+claude
+```
+
+Claude loads any `CLAUDE.md` memory files it finds in your project hierarchy, then presents an input prompt. You can start typing immediately.
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Enter` | Submit the current input |
+| `Ctrl+J` | Insert a newline (multiline input) |
+| `Ctrl+C` | Cancel the current in-progress response |
+| `Ctrl+D` | Exit the REPL (same as `/exit`) |
+| `Up` / `Down` | Cycle through previous inputs |
+| `Ctrl+O` | Toggle conversation transcript view |
+
+<Tip>Press `Ctrl+C` once to interrupt a running response. Claude will stop its current action. You can then type a correction or follow-up.</Tip>
+
+## Input modes
+
+### Single-line input
+
+Type your request and press `Enter` to submit.
+
+```
+> refactor the login function to use async/await
+```
+
+### Multiline input
+
+Use `Ctrl+J` to insert a newline within your message. This lets you provide structured prompts before submitting:
+
+```
+> Fix the following issues:
+  1. The database connection is not closed after each query
+  2. Error messages are not localized
+  (Ctrl+J after each line, Enter to submit)
+```
+
+### Pasting file content
+
+You can paste file contents or long blocks of text directly into the prompt. Claude reads pasted content as part of your message.
+
+## How Claude reads your project context
+
+When you start a session, Claude automatically loads:
+
+- **Project memory** — `CLAUDE.md` and `.claude/CLAUDE.md` files discovered by walking from your working directory up to the filesystem root
+- **Local memory** — `CLAUDE.local.md` files for private project-specific instructions (gitignored)
+- **User memory** — `~/.claude/CLAUDE.md` for your global personal instructions
+- **Rules** — all `.md` files in `.claude/rules/` directories
+
+Files closer to your current directory are loaded with higher priority. Claude follows the instructions in these files throughout the session.
+
+<Note>Claude does not automatically read every file in your project. It reads files on demand as it works — either because you reference them explicitly, or because it decides to read them to understand the codebase.</Note>
+
+## Plan mode
+
+Plan mode restricts Claude to read-only operations. Claude can analyze code and produce a plan, but it cannot write files, run commands, or make changes until you approve.
+
+### Entering plan mode
+
+```
+> /plan
+```
+
+Claude switches to plan mode and confirms:
+
+```
+Enabled plan mode
+```
+
+### Working in plan mode
+
+Once in plan mode, describe what you want Claude to do:
+
+```
+> Refactor the authentication module to support OAuth 2.0
+```
+
+Claude reads files, analyzes the codebase, and writes a plan to a file in your project (typically `.claude/plan-<slug>.md`). It does not make any changes.
+
+### Viewing the current plan
+
+Run `/plan` again while already in plan mode to display the plan Claude has written:
+
+```
+> /plan
+```
+
+This shows the plan content and its file path. If you have an external editor configured, Claude also shows:
+
+```
+"/plan open" to edit this plan in <Editor>
+```
+
+### Opening the plan in an editor
+
+```
+> /plan open
+```
+
+This opens the plan file in your configured editor (`$VISUAL` or `$EDITOR`).
+
+### Executing the plan
+
+Once you are satisfied with the plan, exit plan mode by switching back to normal mode. You can do this by asking Claude to proceed:
+
+```
+> Looks good, go ahead and implement this
+```
+
+Claude exits plan mode and executes the changes described in the plan.
+
+<Warning>Plan mode uses the same model as normal mode. Switching to a more capable model before entering plan mode will produce higher-quality plans.</Warning>
+
+## Cost and token tracking
+
+### Viewing session cost
+
+```
+> /cost
+```
+
+This shows the total API cost and duration for the current session. For Claude.ai subscribers, it shows subscription usage information instead.
+
+### Context usage visualization
+
+```
+> /context
+```
+
+Displays a colored grid showing how much of the context window is currently used. This helps you decide when to use `/compact` to free up space.
+
+### Automatic compact warnings
+
+As your conversation grows, Claude Code tracks how much context remains. When context is running low, it displays a warning suggesting you run `/compact` to summarize the conversation. You can suppress repeated warnings by running `/compact` directly.
+
+## Exiting the REPL
+
+```
+> /exit
+```
+
+Or press `Ctrl+D`. Both cleanly end the session. Background tasks (if any were started with `Ctrl+B`) continue running.

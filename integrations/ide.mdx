@@ -1,0 +1,144 @@
+---
+title: "IDE Integration"
+description: "Connect Claude Code to your IDE for diff views, file context, and richer development workflows."
+---
+
+Claude Code connects to your IDE over a local MCP (Model Context Protocol) transport. Once connected, Claude can open files, display diffs, and navigate to locations directly inside your editor.
+
+## Supported IDEs
+
+<CardGroup cols={2}>
+  <Card title="VS Code" icon="code">
+    Install the Claude Code extension from the VS Code Marketplace.
+  </Card>
+  <Card title="Cursor" icon="mouse-pointer">
+    Supported via the same VS Code-compatible extension.
+  </Card>
+  <Card title="Windsurf" icon="wind">
+    Supported via the same VS Code-compatible extension.
+  </Card>
+  <Card title="JetBrains IDEs" icon="square">
+    IntelliJ IDEA, PyCharm, WebStorm, GoLand, Rider, CLion, RubyMine, DataGrip, DataSpell, Aqua, Android Studio, and more. Install the Claude Code plugin from the JetBrains Marketplace.
+  </Card>
+</CardGroup>
+
+<Note>
+  Only one Claude Code instance can be connected to VS Code at a time.
+</Note>
+
+## Installing the extension or plugin
+
+<Tabs>
+  <Tab title="VS Code / Cursor / Windsurf">
+    <Steps>
+      <Step title="Open the Extensions panel">
+        Press `Ctrl+Shift+X` (Windows/Linux) or `Cmd+Shift+X` (macOS).
+      </Step>
+      <Step title="Search for Claude Code">
+        Search for **Claude Code** and click **Install**.
+      </Step>
+      <Step title="Reload">
+        Reload the window when prompted. The extension activates automatically.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="JetBrains">
+    <Steps>
+      <Step title="Open Settings">
+        Go to **Settings → Plugins → Marketplace**.
+      </Step>
+      <Step title="Search for Claude Code">
+        Search for **Claude Code** and click **Install**.
+      </Step>
+      <Step title="Restart the IDE">
+        The plugin requires a full IDE restart to take effect.
+      </Step>
+    </Steps>
+
+    <Note>
+      You can also install the plugin from the CLI using the `/ide` command. Claude Code will detect running JetBrains IDEs and offer to install the plugin automatically.
+    </Note>
+  </Tab>
+</Tabs>
+
+## The `/ide` command
+
+The `/ide` command manages your IDE connection from within Claude Code.
+
+```bash
+/ide
+```
+
+Running `/ide` opens an interactive selector listing all IDEs that have the Claude Code extension or plugin installed and are currently running. Select an IDE to connect, or select **None** to disconnect.
+
+```bash
+/ide open
+```
+
+Running `/ide open` opens the current project (or active worktree) in a connected IDE. For VS Code-based editors, this uses the `code` CLI. For JetBrains IDEs, you are shown the path to open manually.
+
+### Auto-connect
+
+Claude Code can connect to your IDE automatically when it starts. Enable auto-connect in one of these ways:
+
+- Run `/config` and enable **Auto-connect to IDE**.
+- Start Claude Code with the `--ide` flag.
+- Set the environment variable `CLAUDE_CODE_AUTO_CONNECT_IDE=1`.
+
+To disable auto-connect, set `CLAUDE_CODE_AUTO_CONNECT_IDE=0`.
+
+<Tip>
+  If you run Claude Code inside a supported IDE terminal (for example, the integrated terminal in VS Code or a JetBrains terminal), auto-connect is enabled by default.
+</Tip>
+
+## Features available through IDE integration
+
+When Claude Code is connected to your IDE, the following capabilities are available:
+
+- **Diff view** — Claude can display code changes as a visual diff directly in your editor rather than in the terminal.
+- **File opening** — Claude can open specific files and jump to exact line numbers.
+- **Workspace context** — Claude receives the list of workspace folders open in your IDE, helping it understand multi-root projects.
+- **Extension/plugin installation** — The `/ide` command can install the Claude Code extension or plugin into a running IDE without leaving the terminal.
+
+## Viewing diffs in your IDE
+
+When Claude modifies files and your IDE is connected, diffs are surfaced in the IDE's native diff viewer. This gives you syntax highlighting, side-by-side comparison, and inline accept/reject controls.
+
+If multiple VS Code windows are open, Claude connects to the one whose workspace folder matches the current working directory. Other running instances are listed as unavailable:
+
+```
+Found 2 other running IDE(s). However, their workspace/project directories
+do not match the current cwd.
+```
+
+## Connection status
+
+The IDE connection status (`connected`, `pending`, or `disconnected`) is reflected in the Claude Code UI. The connection goes through MCP using either WebSocket (`ws:`) or SSE (`http:`) transport, depending on how the extension exposes itself.
+
+The connection attempt times out after **35 seconds**. If the IDE does not respond within that window, Claude Code reports a timeout and returns to the disconnected state.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="No available IDEs detected">
+    - Confirm the extension or plugin is installed in your IDE.
+    - For JetBrains IDEs, ensure you have **fully restarted** the IDE after installing the plugin — a reload is not sufficient.
+    - Make sure the IDE is running before opening Claude Code.
+    - The IDE's workspace or project folder must match the directory where you launched Claude Code.
+  </Accordion>
+  <Accordion title="Connection timed out">
+    - The MCP connection attempt times out after 35 seconds. Try running `/ide` again to reconnect.
+    - Check that no firewall or security policy is blocking local loopback connections.
+    - Restarting the IDE and then re-running `/ide` often resolves transient failures.
+  </Accordion>
+  <Accordion title="Failed to connect">
+    - Run `/ide` and select **None** to disconnect, then select the IDE again to retry.
+    - If the IDE was updated recently, restart it so the extension picks up any changes.
+  </Accordion>
+  <Accordion title="JetBrains: plugin not found after install">
+    The JetBrains plugin requires a complete IDE restart (not just a project reload). Close and reopen the IDE, then run `/ide` to connect.
+
+    If the plugin still does not appear, visit the plugin installation docs at:
+    `https://docs.claude.com/s/claude-code-jetbrains`
+  </Accordion>
+</AccordionGroup>

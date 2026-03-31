@@ -1,0 +1,62 @@
+---
+title: "Introduction"
+description: "Claude Code is an agentic AI coding tool that lives in your terminal, understands your codebase, and helps you code faster through natural language."
+---
+
+Claude Code is a CLI tool built by Anthropic that brings Claude directly into your development workflow. Rather than switching between your editor, a browser, and a chat interface, you interact with Claude where you already work — the terminal.
+
+It understands your codebase, reads files, runs commands, edits code, and handles entire workflows on your behalf. You describe what you want in plain English; Claude Code figures out how to do it.
+
+## What makes it different
+
+Most AI coding assistants are chat interfaces bolted onto an editor. Claude Code is a full agent: it can read your repository, write and edit files, execute shell commands, manage git history, and chain multi-step tasks together — all without you having to copy and paste code back and forth.
+
+<CardGroup cols={2}>
+  <Card title="Codebase understanding" icon="magnifying-glass">
+    Claude Code reads your actual files and understands the structure of your project before taking any action.
+  </Card>
+  <Card title="File editing" icon="pen-to-square">
+    Make targeted edits across multiple files in a single request — refactors, renames, and structural changes included.
+  </Card>
+  <Card title="Terminal commands" icon="terminal">
+    Run build scripts, tests, linters, and arbitrary shell commands. Claude Code can act on the output to iterate automatically.
+  </Card>
+  <Card title="Git workflows" icon="code-branch">
+    Stage changes, write commit messages, create branches, and manage pull requests without leaving Claude Code.
+  </Card>
+  <Card title="Natural language tasks" icon="comment">
+    Describe what you want in plain English. Claude Code translates intent into actions against your actual codebase.
+  </Card>
+  <Card title="IDE and GitHub integration" icon="puzzle-piece">
+    Use Claude Code in your terminal, inside your IDE, or tag `@claude` directly in GitHub pull requests and issues.
+  </Card>
+</CardGroup>
+
+## How it fits into your workflow
+
+Claude Code is designed to handle the repetitive and time-consuming parts of software development so you can focus on the decisions that matter.
+
+**Routine tasks** — writing boilerplate, updating tests after a refactor, formatting files, bumping dependency versions — can be delegated entirely.
+
+**Exploratory tasks** — understanding an unfamiliar codebase, tracing a bug through multiple files, summarizing what a function does — are faster when Claude Code can read the relevant code itself rather than relying on you to paste it in.
+
+**Git workflows** — authoring commit messages, opening PRs, reviewing diffs — are streamlined because Claude Code has the full context of what changed and why.
+
+You remain in control. Claude Code asks for confirmation before making destructive changes, and you can review every edit before it lands.
+
+## Where to run it
+
+- **Terminal** — the primary interface. Run `claude` from any project directory.
+- **IDE** — integrations bring Claude Code into VS Code, JetBrains, and other editors.
+- **GitHub** — tag `@claude` in issues or pull requests to trigger agentic tasks in CI.
+
+## Ready to get started?
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install Claude Code and complete your first task in under five minutes.
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Full installation instructions, authentication setup, and troubleshooting.
+  </Card>
+</CardGroup>

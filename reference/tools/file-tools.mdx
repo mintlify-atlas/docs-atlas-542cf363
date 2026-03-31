@@ -1,0 +1,368 @@
+---
+title: "File Tools"
+description: "Read, Edit, Write, Glob, and Grep — the tools Claude Code uses to work with files and search codebases."
+---
+
+Claude Code includes five dedicated file tools. Using these tools is always preferred over running equivalent shell commands (`cat`, `grep`, `find`, `sed`) because they carry better permission semantics and produce a clearer activity trail.
+
+---
+
+## Read
+
+Reads a file from the local filesystem. Supports text files, images (PNG, JPG, GIF, WebP), PDF documents, and Jupyter notebooks (`.ipynb`).
+
+### Parameters
+
+<ParamField path="file_path" type="string" required>
+  Absolute path to the file to read. Relative paths are not accepted.
+</ParamField>
+
+<ParamField path="offset" type="number">
+  Line number to start reading from (1-indexed). Only provide when the file is too large to read at once.
+</ParamField>
+
+<ParamField path="limit" type="number">
+  Number of lines to read. Only provide when the file is too large to read at once.
+</ParamField>
+
+<ParamField path="pages" type="string">
+  Page range for PDF files (e.g., `"1-5"`, `"3"`, `"10-20"`). Only applicable to PDF files. Maximum 20 pages per request.
+</ParamField>
+
+### Output
+
+The output format depends on the file type.
+
+<Tabs>
+  <Tab title="Text">
+    <ResponseField name="type" type="string">
+      `"text"`
+    </ResponseField>
+    <ResponseField name="file" type="object">
+      <Expandable title="properties">
+        <ResponseField name="filePath" type="string">Path to the file that was read.</ResponseField>
+        <ResponseField name="content" type="string">File content with line numbers prefixed in `cat -n` format.</ResponseField>
+        <ResponseField name="numLines" type="number">Number of lines in the returned content.</ResponseField>
+        <ResponseField name="startLine" type="number">The starting line number (matches `offset`).</ResponseField>
+        <ResponseField name="totalLines" type="number">Total number of lines in the file.</ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Tab>
+  <Tab title="Image">
+    <ResponseField name="type" type="string">
+      `"image"`
+    </ResponseField>
+    <ResponseField name="file" type="object">
+      <Expandable title="properties">
+        <ResponseField name="base64" type="string">Base64-encoded image data.</ResponseField>
+        <ResponseField name="type" type="string">MIME type: `image/jpeg`, `image/png`, `image/gif`, or `image/webp`.</ResponseField>
+        <ResponseField name="originalSize" type="number">Original file size in bytes.</ResponseField>
+        <ResponseField name="dimensions" type="object">Optional dimension info (originalWidth, originalHeight, displayWidth, displayHeight).</ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Tab>
+  <Tab title="PDF">
+    <ResponseField name="type" type="string">
+      `"pdf"` or `"parts"` (when pages are extracted as images)
+    </ResponseField>
+    <ResponseField name="file" type="object">
+      <Expandable title="properties">
+        <ResponseField name="filePath" type="string">Path to the PDF file.</ResponseField>
+        <ResponseField name="base64" type="string">Base64-encoded PDF data (type `pdf`).</ResponseField>
+        <ResponseField name="originalSize" type="number">Original file size in bytes.</ResponseField>
+        <ResponseField name="count" type="number">Number of pages extracted (type `parts`).</ResponseField>
+        <ResponseField name="outputDir" type="string">Directory containing extracted page images (type `parts`).</ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Tab>
+  <Tab title="Notebook">
+    <ResponseField name="type" type="string">
+      `"notebook"`
+    </ResponseField>
+    <ResponseField name="file" type="object">
+      <Expandable title="properties">
+        <ResponseField name="filePath" type="string">Path to the notebook file.</ResponseField>
+        <ResponseField name="cells" type="array">Array of notebook cells with their outputs.</ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Tab>
+</Tabs>
+
+### Usage notes
+
+- By default, reads up to 2000 lines from the beginning of the file.
+- For large files, use `offset` and `limit` to read specific sections.
+- Images are automatically resized if they would exceed the token budget.
+- For PDFs with more than 10 pages, you **must** provide the `pages` parameter.
+- If the same file is read again without modification, Claude Code returns a `file_unchanged` stub to avoid duplicating content in context.
+
+### Examples
+
+```text Reading a source file
+file_path: "/home/user/project/src/index.ts"
+```
+
+```text Reading lines 100–150 of a large file
+file_path: "/home/user/project/logs/app.log"
+offset: 100
+limit: 50
+```
+
+```text Reading pages 1–5 of a PDF
+file_path: "/home/user/docs/report.pdf"
+pages: "1-5"
+```
+
+---
+
+## Edit
+
+Performs an exact string replacement in an existing file. The file must have been read with `Read` before it can be edited.
+
+### Parameters
+
+<ParamField path="file_path" type="string" required>
+  Absolute path to the file to modify.
+</ParamField>
+
+<ParamField path="old_string" type="string" required>
+  The exact text to find and replace. Must be unique in the file unless `replace_all` is `true`.
+</ParamField>
+
+<ParamField path="new_string" type="string" required>
+  The replacement text. Must differ from `old_string`.
+</ParamField>
+
+<ParamField path="replace_all" type="boolean" default="false">
+  When `true`, replaces every occurrence of `old_string`. Useful for renaming variables or symbols across a file.
+</ParamField>
+
+### Output
+
+<ResponseField name="filePath" type="string">Path to the file that was updated.</ResponseField>
+<ResponseField name="oldString" type="string">The actual string that was replaced (may differ from input after quote normalization).</ResponseField>
+<ResponseField name="newString" type="string">The replacement string.</ResponseField>
+<ResponseField name="structuredPatch" type="array">Diff patch showing the changes as hunks.</ResponseField>
+<ResponseField name="replaceAll" type="boolean">Whether all occurrences were replaced.</ResponseField>
+
+### Usage notes
+
+- You must call `Read` on the file before calling `Edit`.
+- The edit fails if `old_string` appears more than once in the file and `replace_all` is `false`. Provide more surrounding context to make the match unique.
+- Preserve exact indentation from the `Read` output. The line number prefix (e.g., `  1→`) is not part of the file content and must not be included in `old_string` or `new_string`.
+- Use `replace_all: true` for renames and find-and-replace operations across the entire file.
+- Cannot edit Jupyter notebooks (`.ipynb`); use the `NotebookEdit` tool instead.
+
+<Warning>
+Edit will fail if the file has been modified since it was last read. Read the file again to get the current content before retrying.
+</Warning>
+
+### Example
+
+```text Rename a function
+file_path: "/home/user/project/src/utils.ts"
+old_string: "function calculateTotal("
+new_string: "function computeTotal("
+replace_all: true
+```
+
+---
+
+## Write
+
+Creates a new file or completely overwrites an existing file. For modifying existing files, prefer `Edit` — it sends only the diff and is more efficient.
+
+### Parameters
+
+<ParamField path="file_path" type="string" required>
+  Absolute path to the file to write. Must be an absolute path.
+</ParamField>
+
+<ParamField path="content" type="string" required>
+  The full content to write to the file.
+</ParamField>
+
+### Output
+
+<ResponseField name="type" type="string">
+  `"create"` for new files, `"update"` for overwritten files.
+</ResponseField>
+<ResponseField name="filePath" type="string">Path to the file that was written.</ResponseField>
+<ResponseField name="content" type="string">The content that was written.</ResponseField>
+<ResponseField name="structuredPatch" type="array">Diff patch for updates (empty for new file creation).</ResponseField>
+<ResponseField name="originalFile" type="string">The original file content before the write. `null` for new files.</ResponseField>
+
+### Usage notes
+
+- If the file already exists, it must have been read first with `Read`.
+- The tool creates any missing parent directories automatically.
+- Use `Edit` when only modifying part of an existing file — `Write` sends the entire file content every time.
+
+<Note>
+Do not use `Write` to create documentation files (`.md`, `README`) unless explicitly requested.
+</Note>
+
+### Example
+
+```text Create a new configuration file
+file_path: "/home/user/project/.eslintrc.json"
+content: |
+  {
+    "extends": "eslint:recommended",
+    "rules": {
+      "no-console": "warn"
+    }
+  }
+```
+
+---
+
+## Glob
+
+Finds files matching a glob pattern. Results are sorted by modification time (most recently modified first).
+
+### Parameters
+
+<ParamField path="pattern" type="string" required>
+  Glob pattern to match files against (e.g., `"**/*.ts"`, `"src/**/*.{ts,tsx}"`).
+</ParamField>
+
+<ParamField path="path" type="string">
+  Directory to search in. Defaults to the current working directory. Omit entirely to use the default — do not pass `"undefined"` or `"null"`.
+</ParamField>
+
+### Output
+
+<ResponseField name="filenames" type="string[]">Array of matching file paths (relative to cwd).</ResponseField>
+<ResponseField name="numFiles" type="number">Total number of files found.</ResponseField>
+<ResponseField name="durationMs" type="number">Time taken to execute the search in milliseconds.</ResponseField>
+<ResponseField name="truncated" type="boolean">Whether results were capped at 100 files. Use a more specific pattern or path if truncated.</ResponseField>
+
+### Usage notes
+
+- Supports standard glob syntax: `*`, `**`, `?`, `{a,b}`, `[abc]`.
+- Use `Glob` instead of running `find` or `ls` via `Bash`.
+- Results are capped at 100 files. Narrow the pattern or set `path` to a subdirectory if you hit the limit.
+
+### Examples
+
+```text Find all TypeScript files
+pattern: "**/*.ts"
+```
+
+```text Find test files in a specific directory
+pattern: "**/*.test.{ts,tsx}"
+path: "/home/user/project/src"
+```
+
+---
+
+## Grep
+
+Searches file contents using regular expressions. Powered by [ripgrep](https://github.com/BurntSushi/ripgrep) for fast, accurate searches across large codebases.
+
+### Parameters
+
+<ParamField path="pattern" type="string" required>
+  Regular expression pattern to search for in file contents. Uses ripgrep syntax — literal braces must be escaped (e.g., use `interface\{\}` to match `interface{}`).
+</ParamField>
+
+<ParamField path="path" type="string">
+  File or directory to search in. Defaults to the current working directory.
+</ParamField>
+
+<ParamField path="glob" type="string">
+  Glob pattern to filter which files are searched (e.g., `"*.js"`, `"*.{ts,tsx}"`). Maps to ripgrep's `--glob` flag.
+</ParamField>
+
+<ParamField path="output_mode" type="string" default="files_with_matches">
+  Controls output format:
+  - `"files_with_matches"` — returns file paths only (default)
+  - `"content"` — returns matching lines with context
+  - `"count"` — returns match counts per file
+</ParamField>
+
+<ParamField path="-B" type="number">
+  Lines of context to show **before** each match. Requires `output_mode: "content"`.
+</ParamField>
+
+<ParamField path="-A" type="number">
+  Lines of context to show **after** each match. Requires `output_mode: "content"`.
+</ParamField>
+
+<ParamField path="-C" type="number">
+  Lines of context to show both **before and after** each match (alias for `context`). Requires `output_mode: "content"`.
+</ParamField>
+
+<ParamField path="context" type="number">
+  Lines to show before and after each match. Equivalent to `-C`. Requires `output_mode: "content"`.
+</ParamField>
+
+<ParamField path="-n" type="boolean" default="true">
+  Show line numbers in output. Requires `output_mode: "content"`.
+</ParamField>
+
+<ParamField path="-i" type="boolean" default="false">
+  Case-insensitive search.
+</ParamField>
+
+<ParamField path="type" type="string">
+  File type filter using ripgrep type names (e.g., `"js"`, `"py"`, `"rust"`, `"go"`). More efficient than `glob` for standard language types.
+</ParamField>
+
+<ParamField path="head_limit" type="number" default="250">
+  Limit output to the first N results, equivalent to piping through `head -N`. Pass `0` for unlimited results (use sparingly).
+</ParamField>
+
+<ParamField path="offset" type="number" default="0">
+  Skip the first N results before applying `head_limit`. Useful for paginating through large result sets.
+</ParamField>
+
+<ParamField path="multiline" type="boolean" default="false">
+  Enable multiline mode where `.` matches newlines and patterns can span multiple lines. Maps to ripgrep's `-U --multiline-dotall`.
+</ParamField>
+
+### Output
+
+<ResponseField name="mode" type="string">The output mode that was used.</ResponseField>
+<ResponseField name="filenames" type="string[]">Matching file paths (populated in `files_with_matches` mode).</ResponseField>
+<ResponseField name="numFiles" type="number">Number of files with matches.</ResponseField>
+<ResponseField name="content" type="string">Matching lines or counts as a string (populated in `content` and `count` modes).</ResponseField>
+<ResponseField name="numLines" type="number">Number of output lines (content mode only).</ResponseField>
+<ResponseField name="numMatches" type="number">Total match count across all files (count mode only).</ResponseField>
+<ResponseField name="appliedLimit" type="number">The limit that was applied when results were truncated.</ResponseField>
+<ResponseField name="appliedOffset" type="number">The offset that was applied.</ResponseField>
+
+### Usage notes
+
+- Always prefer `Grep` over running `grep` or `rg` via `Bash`.
+- VCS directories (`.git`, `.svn`, `.hg`) are automatically excluded.
+- Lines longer than 500 characters are truncated to avoid base64 or minified content cluttering results.
+- Results in `files_with_matches` mode are sorted by modification time (most recently modified first).
+
+### Examples
+
+```text Find files containing a function name
+pattern: "function calculateTotal"
+output_mode: "files_with_matches"
+```
+
+```text Search TypeScript files with context lines
+pattern: "TODO|FIXME"
+type: "ts"
+output_mode: "content"
+-C: 2
+```
+
+```text Case-insensitive search with line numbers
+pattern: "error handling"
+path: "/home/user/project/src"
+output_mode: "content"
+-i: true
+```
+
+```text Count occurrences per file
+pattern: "console\\.log"
+output_mode: "count"
+glob: "*.js"
+```

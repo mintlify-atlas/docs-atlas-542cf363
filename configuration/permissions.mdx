@@ -1,0 +1,228 @@
+---
+title: "Permissions"
+description: "Control which tools Claude Code can use automatically and which require your approval."
+---
+
+Claude Code asks for permission before taking potentially impactful actions — running shell commands, writing files, making network requests, and so on. The permissions system lets you pre-approve categories of actions so Claude can work autonomously within boundaries you define.
+
+## How permission prompts work
+
+When Claude wants to use a tool that hasn't been pre-approved, it pauses and shows you:
+
+- What tool it wants to use and with what input
+- An explanation of what the action does and why
+- A risk level assessment (Low / Medium / High)
+
+You can **allow once**, **allow for the session**, **allow always** (writes to your settings), or **deny** the action.
+
+<Note>
+  Permission prompts come from `/permissions` (run it to view and manage rules) and from the settings `permissions` key.
+</Note>
+
+## Permission rule syntax
+
+Rules use a `Tool(pattern)` syntax. The tool name can be combined with a glob-style pattern that matches the tool's primary input.
+
+```
+Bash(git *)          # Allow all git commands
+Bash(npm run *)      # Allow npm run scripts
+Read(src/**)         # Allow reading files under src/
+Write(**.md)         # Allow writing Markdown files
+```
+
+Rules without a pattern match all uses of that tool:
+
+```
+Read         # Allow all file reads
+WebSearch    # Allow all web searches
+```
+
+<Tip>
+  Use the `/permissions` command to manage rules interactively. Claude Code writes new rules to the correct settings file automatically.
+</Tip>
+
+## Configuring permissions in settings
+
+The `permissions` key in any settings file accepts three lists of rules:
+
+<ParamField path="permissions.allow" type="string[]">
+  Rules for actions Claude may take without prompting. Rules are matched against the tool name and primary input argument.
+
+  ```json
+  {
+    "permissions": {
+      "allow": [
+        "Bash(git *)",
+        "Bash(npm run *)",
+        "Read(**)",
+        "Write(src/**)"
+      ]
+    }
+  }
+  ```
+</ParamField>
+
+<ParamField path="permissions.deny" type="string[]">
+  Rules for actions Claude is never allowed to take, even if the user approves interactively.
+
+  ```json
+  {
+    "permissions": {
+      "deny": [
+        "Bash(rm -rf *)",
+        "Bash(curl *)",
+        "WebFetch"
+      ]
+    }
+  }
+  ```
+</ParamField>
+
+<ParamField path="permissions.ask" type="string[]">
+  Rules that always require confirmation, overriding any `allow` rules at a lower-priority settings scope.
+
+  ```json
+  {
+    "permissions": {
+      "ask": ["Bash(git push *)"]
+    }
+  }
+  ```
+</ParamField>
+
+<ParamField path="permissions.defaultMode" type="string">
+  Default behavior when a tool use doesn't match any `allow` or `deny` rule.
+
+  - `"default"` — ask for each individual action (default behavior)
+  - `"acceptEdits"` — auto-approve file edits, ask for shell commands
+  - `"bypassPermissions"` — skip all permission checks (requires explicit opt-in)
+
+  ```json
+  { "permissions": { "defaultMode": "acceptEdits" } }
+  ```
+</ParamField>
+
+<ParamField path="permissions.additionalDirectories" type="string[]">
+  Extra directories outside the project root that Claude Code is allowed to read from and write to.
+
+  ```json
+  {
+    "permissions": {
+      "additionalDirectories": ["/home/user/shared-libs"]
+    }
+  }
+  ```
+</ParamField>
+
+## Permission levels
+
+Claude Code evaluates rules in this order, where **later sources win**:
+
+<Steps>
+  <Step title="Policy settings (managed-settings.json)">
+    Set by enterprise administrators. Users cannot override these rules. When `allowManagedPermissionRulesOnly` is set in policy settings, rules from all other sources are ignored.
+  </Step>
+  <Step title="User settings (~/.claude/settings.json)">
+    Personal defaults that apply across all projects.
+  </Step>
+  <Step title="Project settings (.claude/settings.json)">
+    Team-wide defaults committed to the repository.
+  </Step>
+  <Step title="Local settings (.claude/settings.local.json)">
+    Machine-local overrides. Gitignored. Highest precedence among user-editable sources.
+  </Step>
+</Steps>
+
+<Warning>
+  `deny` rules from **any** scope block an action regardless of `allow` rules at other scopes. A deny in project settings cannot be overridden by an allow in local settings.
+</Warning>
+
+## Sandbox mode
+
+Sandbox mode runs shell commands inside an OS-level sandbox that restricts filesystem writes and network access. It provides a harder boundary than permission rules alone.
+
+<ParamField path="sandbox.enabled" type="boolean">
+  Enable sandboxing for shell commands. When `true`, Bash commands run inside a restricted environment.
+</ParamField>
+
+<ParamField path="sandbox.failIfUnavailable" type="boolean">
+  Abort if the sandbox cannot be activated on this system (e.g. missing kernel support). Default: `false`.
+</ParamField>
+
+<ParamField path="sandbox.allowUnsandboxedCommands" type="string[]">
+  Specific commands that are allowed to run outside the sandbox when sandboxing is enabled.
+</ParamField>
+
+<ParamField path="sandbox.network" type="object">
+  Network policy inside the sandbox (allowed hostnames, ports, etc.).
+</ParamField>
+
+<ParamField path="sandbox.excludedCommands" type="string[]">
+  Commands that bypass the sandbox entirely.
+</ParamField>
+
+Example:
+
+```json
+{
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": false,
+    "allowUnsandboxedCommands": ["make test"]
+  }
+}
+```
+
+## Enterprise permission controls
+
+For organizations managing Claude Code at scale, policy settings expose additional controls:
+
+<ParamField path="allowManagedPermissionRulesOnly" type="boolean">
+  When `true` (set in managed settings), only permission rules from managed settings are respected. User, project, local, and CLI argument rules are ignored.
+</ParamField>
+
+<ParamField path="permissions.disableBypassPermissionsMode" type='"disable"'>
+  Set to `"disable"` to prevent users from entering bypass-permissions mode.
+</ParamField>
+
+## Common permission patterns
+
+<AccordionGroup>
+  <Accordion title="Allow all reads, prompt for writes and shell">
+    ```json
+    {
+      "permissions": {
+        "allow": ["Read(**)"],
+        "defaultMode": "default"
+      }
+    }
+    ```
+  </Accordion>
+  <Accordion title="Allow safe development workflow">
+    ```json
+    {
+      "permissions": {
+        "allow": [
+          "Read(**)",
+          "Write(src/**)",
+          "Write(tests/**)",
+          "Bash(git *)",
+          "Bash(npm run *)",
+          "Bash(npx *)"
+        ],
+        "deny": ["Bash(git push *)", "Bash(rm -rf *)"]
+      }
+    }
+    ```
+  </Accordion>
+  <Accordion title="Read-only mode (no writes or shell)">
+    ```json
+    {
+      "permissions": {
+        "allow": ["Read(**)"],
+        "deny": ["Write", "Bash", "Edit"]
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>

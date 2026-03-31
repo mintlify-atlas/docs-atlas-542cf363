@@ -1,97 +1,77 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Claude Code"
+description: "An agentic AI coding assistant that runs in your terminal, understands your codebase, and helps you code faster through natural language commands."
 ---
 
-## Setting up
+Claude Code is a powerful CLI tool that brings AI-assisted coding directly to your terminal. It reads, edits, and writes files across your codebase, executes commands, manages git workflows, and handles entire development tasks — all through natural conversation.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Install Claude Code and run your first command in under two minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Slash Commands" icon="terminal" href="/usage/slash-commands">
+    Explore all built-in commands like /plan, /review, /memory, and more.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="MCP Servers" icon="plug" href="/configuration/mcp-servers">
+    Extend Claude Code with Model Context Protocol servers.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="SDK API" icon="code" href="/reference/sdk/overview">
+    Embed Claude Code in your own applications using the TypeScript SDK.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What Claude Code can do
 
-Everything you need to create world-class documentation.
+<CardGroup cols={2}>
+  <Card title="Understand your codebase" icon="magnifying-glass-code">
+    Claude Code reads files, searches patterns, and builds a mental model of your entire project before taking action.
+  </Card>
+  <Card title="Edit files intelligently" icon="file-pen">
+    Make targeted edits across multiple files simultaneously with full context awareness and automatic conflict resolution.
+  </Card>
+  <Card title="Run terminal commands" icon="square-terminal">
+    Execute bash commands, run tests, install dependencies, and manage processes — all with your approval.
+  </Card>
+  <Card title="Manage git workflows" icon="code-branch">
+    Create branches, stage commits, write commit messages, open pull requests, and review diffs naturally.
+  </Card>
+  <Card title="Multi-agent tasks" icon="diagram-project">
+    Spawn parallel sub-agents to work on independent tasks simultaneously for faster completion.
+  </Card>
+  <Card title="IDE integration" icon="window-restore">
+    Connect with VS Code, JetBrains, and other editors to work with your existing workflow.
+  </Card>
+</CardGroup>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Get started
 
-## Need inspiration?
+<Steps>
+  <Step title="Install Claude Code">
+    Install globally via npm:
+    ```bash
+    npm install -g @anthropic-ai/claude-code
+    ```
+  </Step>
+  <Step title="Navigate to your project">
+    Open a terminal and change to your project directory:
+    ```bash
+    cd /path/to/your/project
+    ```
+  </Step>
+  <Step title="Start Claude Code">
+    Launch the interactive session:
+    ```bash
+    claude
+    ```
+  </Step>
+  <Step title="Start coding with AI">
+    Type a natural language request and let Claude Code get to work:
+    ```
+    > Refactor the authentication module to use JWT tokens
+    ```
+  </Step>
+</Steps>
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Note>
+  Claude Code requires Node.js 18 or higher. Make sure your environment meets this requirement before installing.
+</Note>

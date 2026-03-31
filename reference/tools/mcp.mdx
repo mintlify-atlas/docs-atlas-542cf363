@@ -1,0 +1,136 @@
+---
+title: "MCP Tool"
+description: "Invoke tools and read resources from connected MCP (Model Context Protocol) servers."
+---
+
+Claude Code supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io), which allows external servers to expose tools and resources that Claude can use. Three built-in tools handle MCP interaction: the `MCP` tool (for calling server-defined tools), `ListMcpResources` (for discovering available resources), and `ReadMcpResource` (for reading a specific resource by URI).
+
+---
+
+## MCP (server-defined tools)
+
+When an MCP server is connected, each tool it exposes becomes available to Claude as a first-class tool with its own name, description, and input schema — all defined by the server. Claude invokes these tools the same way it invokes built-in tools.
+
+### How it works
+
+Claude Code uses the MCP tool mechanism as a base, but each connected server's tools are registered with:
+
+- A real tool name (e.g., `github__search_repositories`, `postgres__query`)
+- A description provided by the server
+- An input schema defined by the server
+
+The input parameters are entirely determined by the server's tool definition. There is no fixed parameter set for MCP tools — each tool accepts whatever the server specifies.
+
+### Output
+
+<ResponseField name="result" type="string">
+  The MCP tool's execution result, returned as a string. The content and format depend entirely on the server and tool.
+</ResponseField>
+
+### Referencing MCP tools
+
+You can ask Claude to use a specific MCP tool by name:
+
+```text
+Use the github__search_repositories tool to find TypeScript projects with over 1000 stars.
+```
+
+Or refer to it by its MCP server:
+
+```text
+Search for recent commits using the GitHub MCP server.
+```
+
+### Permissions
+
+MCP tools use a passthrough permission model. Claude Code will ask for your consent before invoking an MCP tool for the first time. You can pre-approve MCP tools in your settings.
+
+<Note>
+If an MCP server provides a web fetch or search tool, prefer it over the built-in `WebFetch` or `WebSearch` tools — MCP tools may have authenticated access or fewer restrictions.
+</Note>
+
+---
+
+## ListMcpResources
+
+Lists the resources available from connected MCP servers. Resources are data artifacts exposed by a server (files, database records, API responses, etc.) that can be read by URI.
+
+### Parameters
+
+<ParamField path="server" type="string">
+  Optional. Filter results to a specific MCP server by name. When omitted, resources from all connected servers are returned.
+</ParamField>
+
+### Output
+
+Returns an array of resource objects:
+
+<ResponseField name="uri" type="string">The resource URI — used as the identifier to read the resource with `ReadMcpResource`.</ResponseField>
+<ResponseField name="name" type="string">Human-readable resource name.</ResponseField>
+<ResponseField name="server" type="string">The name of the MCP server that provides this resource.</ResponseField>
+<ResponseField name="mimeType" type="string">MIME type of the resource content (e.g., `"text/plain"`, `"application/json"`).</ResponseField>
+<ResponseField name="description" type="string">Optional description of what the resource contains.</ResponseField>
+
+### Examples
+
+```text List all resources from all servers
+{}
+```
+
+```text List resources from a specific server
+server: "myserver"
+```
+
+---
+
+## ReadMcpResource
+
+Reads the content of a specific resource from an MCP server, identified by its server name and URI.
+
+### Parameters
+
+<ParamField path="server" type="string" required>
+  The name of the MCP server to read the resource from. Must match a connected server's name exactly.
+</ParamField>
+
+<ParamField path="uri" type="string" required>
+  The URI of the resource to read. Obtain URIs from `ListMcpResources`.
+</ParamField>
+
+### Output
+
+<ResponseField name="contents" type="array">
+  Array of content objects. Each object includes:
+
+  <Expandable title="Content object fields">
+    <ResponseField name="uri" type="string">The resource URI.</ResponseField>
+    <ResponseField name="mimeType" type="string">MIME type of the content.</ResponseField>
+    <ResponseField name="text" type="string">Text content of the resource (for text resources).</ResponseField>
+    <ResponseField name="blobSavedTo" type="string">Path where binary content was saved to disk (for binary resources). Use the `Read` tool to inspect the file.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Usage notes
+
+- Binary blob content (images, PDFs, etc.) is automatically saved to a temporary file rather than inlined as base64. The `blobSavedTo` field gives you the path; use the `Read` tool to access it.
+- The server must have resource capabilities enabled. If it doesn't, `ReadMcpResource` will return an error.
+
+### Example workflow
+
+```text Step 1: Discover available resources
+ListMcpResources({ server: "my-db-server" })
+
+Step 2: Read a specific resource
+ReadMcpResource({
+  server: "my-db-server",
+  uri: "db://schema/users"
+})
+```
+
+---
+
+## Connecting MCP servers
+
+MCP servers are configured in your Claude Code settings. See the [MCP configuration guide](/configuration/mcp-servers) for instructions on adding servers.
+
+Once connected, Claude Code automatically discovers available tools and resources from each server at startup and when servers send change notifications.

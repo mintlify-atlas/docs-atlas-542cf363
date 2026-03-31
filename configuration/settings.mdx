@@ -1,0 +1,223 @@
+---
+title: "Settings"
+description: "Configure Claude Code behavior with settings files, the /config command, and environment variables."
+---
+
+Claude Code reads configuration from JSON settings files at multiple scopes and exposes an interactive `/config` command for editing them in-session. Settings are deep-merged from lowest to highest priority: user → project → local → policy.
+
+## Accessing settings
+
+<Tabs>
+  <Tab title="/config command">
+    Run `/config` inside a Claude Code session to open the interactive settings editor. Changes are written to the appropriate settings file immediately.
+
+    ```bash
+    /config
+    ```
+  </Tab>
+  <Tab title="Editing files directly">
+    Settings files are plain JSON. Edit them in any text editor. Changes take effect the next time Claude Code starts (or after a session restart).
+
+    ```bash
+    # Global user settings
+    ~/.claude/settings.json
+
+    # Project-level settings (commit this file)
+    .claude/settings.json
+
+    # Local overrides (gitignored automatically)
+    .claude/settings.local.json
+    ```
+  </Tab>
+</Tabs>
+
+## Settings file locations
+
+<AccordionGroup>
+  <Accordion title="User settings (~/.claude/settings.json)">
+    Applies to all projects on your machine. This is the right place for personal preferences such as preferred model, appearance, and API key helpers.
+  </Accordion>
+  <Accordion title="Project settings (.claude/settings.json)">
+    Committed to version control. Use this for team-wide defaults: approved tools, permission rules, and project hooks. Merges on top of user settings.
+  </Accordion>
+  <Accordion title="Local settings (.claude/settings.local.json)">
+    Machine-local overrides for a project. Automatically added to `.gitignore`. Use this for secrets or personal workflow tweaks that should not be shared.
+  </Accordion>
+  <Accordion title="Policy settings (managed-settings.json)">
+    Read-only. Set by enterprise administrators via MDM (macOS plist / Windows HKLM) or a `managed-settings.json` file. Takes the highest precedence; users cannot override policy settings.
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  Settings are loaded once at startup and cached for the session. Restart Claude Code after editing files directly.
+</Note>
+
+## Key settings reference
+
+### Model
+
+<ParamField path="model" type="string">
+  Override the default model. Accepts any model ID supported by your account (e.g. `claude-opus-4-5`, `claude-sonnet-4-5`).
+</ParamField>
+
+<ParamField path="availableModels" type="string[]">
+  Enterprise allowlist of models users may select. Accepts family aliases (`"opus"` allows any Opus version) and full model IDs. When set to an empty array, only the default model is available. Typically set in managed settings.
+</ParamField>
+
+Example:
+
+```json
+{
+  "model": "claude-opus-4-5",
+  "availableModels": ["claude-opus-4-5", "claude-sonnet-4-5"]
+}
+```
+
+### Permissions
+
+<ParamField path="permissions" type="object">
+  Controls which tools Claude Code may use without prompting. See [Permissions](/configuration/permissions) for the full reference.
+</ParamField>
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash(git *)", "Read(*.ts)"],
+    "deny": ["Bash(rm -rf *)"],
+    "defaultMode": "default"
+  }
+}
+```
+
+### Appearance and behavior
+
+<ParamField path="outputStyle" type="string">
+  Controls the output style for assistant responses.
+</ParamField>
+
+<ParamField path="language" type="string">
+  Preferred language for Claude responses and voice dictation (e.g. `"japanese"`, `"spanish"`).
+</ParamField>
+
+<ParamField path="syntaxHighlightingDisabled" type="boolean">
+  Disable syntax highlighting in diffs. Defaults to `false`.
+</ParamField>
+
+<ParamField path="alwaysThinkingEnabled" type="boolean">
+  When `false`, extended thinking is disabled. Defaults to enabled for supported models.
+</ParamField>
+
+<ParamField path="defaultShell" type='"bash" | "powershell"'>
+  Shell used for `!` commands in the input box. Defaults to `"bash"` on all platforms.
+</ParamField>
+
+<ParamField path="prefersReducedMotion" type="boolean">
+  Reduce or disable animations (spinner shimmer, flash effects, etc.) for accessibility.
+</ParamField>
+
+### Git and attribution
+
+<ParamField path="attribution" type="object">
+  Customize attribution text appended to commits and pull requests. Set either field to an empty string to suppress attribution entirely.
+
+  ```json
+  {
+    "attribution": {
+      "commit": "Co-authored-by: Claude <claude@anthropic.com>",
+      "pr": ""
+    }
+  }
+  ```
+</ParamField>
+
+<ParamField path="includeGitInstructions" type="boolean">
+  Include built-in commit and PR workflow instructions in Claude's system prompt. Defaults to `true`.
+</ParamField>
+
+### Session and transcript
+
+<ParamField path="cleanupPeriodDays" type="number">
+  Number of days to retain transcripts. Defaults to `30`. Set to `0` to disable session persistence entirely — no transcripts are written and existing ones are deleted at startup.
+</ParamField>
+
+<ParamField path="env" type="object">
+  Environment variables injected into every Claude Code session.
+
+  ```json
+  {
+    "env": {
+      "NODE_ENV": "development",
+      "MY_API_KEY": "..."
+    }
+  }
+  ```
+</ParamField>
+
+### Git worktrees
+
+<ParamField path="worktree" type="object">
+  Configure git worktree behavior when using the `--worktree` flag.
+
+  - `symlinkDirectories`: Directories to symlink from the main repo to worktrees to avoid disk bloat (e.g. `["node_modules", ".cache"]`).
+  - `sparsePaths`: Directories to include via git sparse-checkout in cone mode — dramatically faster in large monorepos.
+
+  ```json
+  {
+    "worktree": {
+      "symlinkDirectories": ["node_modules", ".cache"],
+      "sparsePaths": ["src", "tests"]
+    }
+  }
+  ```
+</ParamField>
+
+## Environment variables
+
+Claude Code reads certain environment variables at startup. These take effect immediately without a settings-file edit.
+
+| Variable | Description |
+|---|---|
+| `ANTHROPIC_API_KEY` | Anthropic API key for direct API access |
+| `ANTHROPIC_BASE_URL` | Override the Anthropic API base URL |
+| `CLAUDE_CODE_ENTRYPOINT` | Identifies the launch context (analytics only) |
+| `CLAUDE_CODE_OVERRIDE_DATE` | Override the current date (ISO format, for testing) |
+| `CLAUDE_CODE_USE_COWORK_PLUGINS` | Load `cowork_settings.json` instead of `settings.json` |
+| `CLAUDE_CODE_ATTRIBUTION_HEADER` | Set to a falsy value to disable the attribution request header |
+| `CLAUDE_CODE_ENABLE_XAA` | Enable XAA (SEP-990) for MCP server authentication |
+| `MCP_CLIENT_SECRET` | OAuth client secret for MCP servers (alternative to `--client-secret` flag) |
+
+<Tip>
+  Use the `env` settings key to inject project-specific environment variables rather than relying on shell profiles, which may not be loaded in all contexts.
+</Tip>
+
+## Full settings file example
+
+```json
+{
+  "$schema": "https://claude.ai/schema/settings.json",
+  "model": "claude-sonnet-4-5",
+  "language": "english",
+  "cleanupPeriodDays": 30,
+  "defaultShell": "bash",
+  "alwaysThinkingEnabled": true,
+  "permissions": {
+    "allow": ["Bash(git *)", "Read(**)", "Write(src/**)"],
+    "deny": ["Bash(curl *)", "Bash(wget *)"],
+    "defaultMode": "default"
+  },
+  "env": {
+    "NODE_ENV": "development"
+  },
+  "attribution": {
+    "commit": "Co-authored-by: Claude <claude@anthropic.com>"
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [{ "type": "command", "command": "npm run lint --fix" }]
+      }
+    ]
+  }
+}
+```

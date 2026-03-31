@@ -1,0 +1,215 @@
+---
+title: "Skills and Plugins"
+description: "Extend Claude Code with reusable instruction sets (skills) and installable plugin packages."
+---
+
+Claude Code supports two extension mechanisms: **skills** (reusable prompt-based instruction sets invoked as slash commands) and **plugins** (installable packages that can bundle skills, hooks, MCP servers, and agents).
+
+## Skills
+
+A skill is a named instruction set that Claude can invoke via a slash command. When you type `/skill-name`, Claude loads the skill's prompt and executes it with full access to its allowed tools.
+
+Skills are useful for:
+- Encoding team-specific workflows (e.g. `/pr-review`, `/release-notes`)
+- Providing domain-specific context Claude doesn't have by default
+- Wrapping multi-step processes into a single invocable command
+
+### The `/skills` command
+
+Type `/skills` in the Claude Code REPL to open the interactive skills browser. From there you can:
+- Browse all available skills (bundled, project-local, and from plugins)
+- Invoke a skill directly
+- See its description and argument hint
+
+### Creating a skill
+
+Create a Markdown file in `.claude/skills/` in your project directory:
+
+```markdown
+# .claude/skills/pr-review.md
+
+Review the open pull request. Check for:
+- Logic errors and edge cases
+- Missing tests
+- Documentation gaps
+- Breaking changes
+
+Report your findings as a structured list grouped by severity.
+```
+
+The filename (without `.md`) becomes the slash command name. The command above is invoked with `/pr-review`.
+
+### Skill frontmatter
+
+Skills support YAML frontmatter for configuration:
+
+```markdown
+---
+description: Review the open pull request for quality issues
+argumentHint: [PR number or branch name]
+allowedTools:
+  - Bash
+  - Read
+  - WebFetch
+model: opus
+---
+
+Review the pull request...
+```
+
+| Field | Description |
+|-------|-------------|
+| `description` | Shown in `/skills` browser and autocomplete |
+| `argumentHint` | Placeholder shown after the command name |
+| `allowedTools` | Restrict which tools the skill can use |
+| `model` | Override the model for this skill |
+| `whenToUse` | Guidance for when Claude should suggest this skill |
+| `agent` | Route the skill to a specific agent type |
+| `context` | `"inline"` (default) or `"fork"` for isolated execution |
+
+### Bundled skills
+
+Claude Code ships with a set of built-in bundled skills compiled into the binary. These are always available and follow the same invocation pattern as project skills. Bundled skills may also be surfaced through built-in plugins.
+
+### Loading skills from files
+
+Skills in `.claude/skills/` in the current project directory are loaded automatically. Skills in a parent project's `.claude/skills/` directory are also available when working in a subdirectory.
+
+You can also load a skill from an absolute path or URL by configuring it in project settings:
+
+```json
+// .claude/settings.json
+{
+  "skills": [
+    { "path": "/shared/team-skills/deploy.md" }
+  ]
+}
+```
+
+## Plugins
+
+A plugin is an installable package (typically from a Git repository) that can provide any combination of:
+- **Skills** — slash commands
+- **Hooks** — lifecycle event handlers
+- **MCP servers** — custom tools
+- **Agents** — custom agent definitions
+- **Output styles** — custom rendering
+
+Plugin IDs follow the format `{name}@{marketplace}`. Built-in plugins use the special `{name}@builtin` format.
+
+### The `/plugins` command
+
+Use `/plugins` to browse, install, enable, and disable plugins. From the plugin manager you can:
+- View installed plugins and their components
+- Toggle individual plugins on or off
+- Install a plugin from a Git URL or marketplace name
+
+### Built-in plugins
+
+Built-in plugins ship with Claude Code and appear in the `/plugins` UI under a "Built-in" section. They can be toggled on or off — the preference is saved to your user settings.
+
+A built-in plugin definition looks like this internally:
+
+```typescript
+// BuiltinPluginDefinition shape (from src/types/plugin.ts)
+{
+  name: string                         // used in `{name}@builtin`
+  description: string                  // shown in /plugins UI
+  version?: string
+  skills?: BundledSkillDefinition[]    // skills this plugin provides
+  hooks?: HooksSettings                // lifecycle hooks
+  mcpServers?: Record<string, McpServerConfig>
+  defaultEnabled?: boolean             // default on/off (defaults to true)
+  isAvailable?: () => boolean          // hide the plugin if unavailable
+}
+```
+
+Skills contributed by built-in plugins appear alongside project skills in `/skills` and autocomplete.
+
+### Installing a plugin from a repository
+
+```bash
+# Install from a GitHub repository
+/plugins install github:myorg/my-claude-plugin
+
+# Install from a specific branch
+/plugins install github:myorg/my-claude-plugin@main
+```
+
+Plugins are cloned into `~/.claude/plugins/` and their manifest is parsed to load components.
+
+### Plugin manifest
+
+A plugin repository should include a `manifest.json` (or `claude-plugin.json`) at the root:
+
+```json
+{
+  "name": "my-plugin",
+  "description": "Adds deployment and review skills",
+  "version": "1.2.0",
+  "skills": "./skills",
+  "agents": "./agents",
+  "hooks": "./hooks/config.json",
+  "mcpServers": {
+    "deploy-tools": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["./mcp/index.js"]
+    }
+  }
+}
+```
+
+### Plugin components
+
+<Accordion title="Skills from plugins">
+Skills in the plugin's `skills/` directory become slash commands, prefixed with nothing by default. Conflicts with existing skill names are resolved by the plugin manager.
+</Accordion>
+
+<Accordion title="Hooks from plugins">
+Plugins can define hooks for any lifecycle event. Hook scripts are executed alongside Claude Code's own hook handlers.
+
+```json
+// hooks/config.json
+{
+  "PostToolUse": [
+    {
+      "matcher": "Bash",
+      "hooks": [{ "type": "command", "command": "node hooks/log-bash.js" }]
+    }
+  ]
+}
+```
+</Accordion>
+
+<Accordion title="MCP servers from plugins">
+MCP servers declared in the plugin manifest are started automatically when the plugin is enabled. They appear in `/mcp` and their tools are available to Claude.
+</Accordion>
+
+<Accordion title="Agents from plugins">
+Agent Markdown files in the plugin's `agents/` directory register as named agent types usable with the Agent tool's `subagent_type` parameter.
+</Accordion>
+
+### Plugin error types
+
+When a plugin fails to load, Claude Code surfaces a typed error. Common errors:
+
+| Error type | Cause |
+|------------|-------|
+| `plugin-not-found` | Plugin ID not found in the marketplace |
+| `git-auth-failed` | SSH or HTTPS authentication error during clone |
+| `manifest-parse-error` | Plugin manifest contains invalid JSON |
+| `mcp-config-invalid` | An MCP server entry in the manifest is malformed |
+| `hook-load-failed` | A hook script could not be loaded |
+| `dependency-unsatisfied` | A required plugin dependency is not enabled |
+
+## Comparison: skills vs plugins
+
+| | Skills | Plugins |
+|--|--------|---------|
+| Scope | Single slash command | Bundle of components |
+| Location | `.claude/skills/` or `~/.claude/skills/` | Git repo, marketplace |
+| Can include hooks | No (directly) | Yes |
+| Can include MCP servers | No | Yes |
+| User-toggleable | No | Yes (via `/plugins`) |
+| Versioned | No | Yes (via Git SHA) |

@@ -1,0 +1,215 @@
+---
+title: "Memory and Context"
+description: "How Claude Code loads project instructions, manages conversation context, and handles context window limits."
+---
+
+Claude Code uses two related but distinct concepts: **memory** (persistent instructions loaded at the start of a session) and **context** (the live conversation window that grows as you work).
+
+## Memory files
+
+Memory files are Markdown files that Claude reads at the start of every session. They let you give Claude standing instructions about your project — coding conventions, build commands, architecture notes — without repeating them in every conversation.
+
+### File hierarchy
+
+Claude loads memory files in this order, from lowest to highest priority:
+
+| Priority | File | Description |
+|---|---|---|
+| 1 (lowest) | `/etc/claude-code/CLAUDE.md` | Managed memory — organization-wide instructions |
+| 2 | `~/.claude/CLAUDE.md` | User memory — your global personal instructions for all projects |
+| 3 | `CLAUDE.md` (project root) | Project memory — team-shared instructions checked into source control |
+| 3 | `.claude/CLAUDE.md` (project root) | Alternate project memory location |
+| 3 | `.claude/rules/*.md` | Rule files — modular project instructions |
+| 4 (highest) | `CLAUDE.local.md` (project root) | Local memory — your private project-specific instructions (gitignored) |
+
+Claude discovers project and local files by walking from your current directory up to the filesystem root. Files closer to your working directory have higher priority (Claude pays more attention to them).
+
+<Note>Files are loaded in reverse priority order so that higher-priority files appear later in the context, which makes the model more attentive to them.</Note>
+
+### CLAUDE.md — project memory
+
+`CLAUDE.md` is the primary place for project instructions. It is typically checked into source control so all contributors share the same baseline.
+
+A well-written `CLAUDE.md` includes:
+
+- Build, test, and lint commands
+- Project architecture overview
+- Non-obvious conventions or gotchas
+- Required environment variables
+
+Example:
+
+```markdown
+# My Project
+
+## Commands
+- Build: `npm run build`
+- Test: `npm test` (runs Jest)
+- Lint: `npm run lint` (ESLint + Prettier)
+
+## Architecture
+- `src/api/` — Express route handlers
+- `src/services/` — Business logic layer
+- `src/db/` — Knex query builders
+
+## Conventions
+- All database queries go through `src/db/`; never use raw SQL in route handlers
+- Use `zod` for all request validation
+```
+
+### CLAUDE.local.md — local private memory
+
+`CLAUDE.local.md` stores instructions specific to your local setup that you do not want to commit. Add this file to your `.gitignore`.
+
+```markdown
+# My local setup
+
+- Sandbox URL: http://localhost:3001
+- Test database: postgres://localhost/myapp_test
+- I prefer terse explanations without summaries at the end
+```
+
+### User memory — ~/.claude/CLAUDE.md
+
+`~/.claude/CLAUDE.md` applies to all projects. Use it for preferences that are about you, not any specific project.
+
+```markdown
+# My global preferences
+
+- Always explain tradeoffs when suggesting alternatives
+- Use TypeScript over JavaScript when I ask for new files
+- My default test runner is Vitest
+```
+
+### Rules — .claude/rules/*.md
+
+The `.claude/rules/` directory lets you split project instructions into separate files. All `.md` files in this directory are loaded automatically.
+
+Rules support frontmatter `paths:` to apply them conditionally to specific file patterns:
+
+```markdown
+---
+paths:
+  - src/api/**
+---
+
+# API route rules
+
+All route handlers must validate request bodies with Zod before accessing `req.body`.
+```
+
+This rule is only injected when Claude is working with files under `src/api/`.
+
+### @include directives
+
+Memory files can include other files using the `@` syntax:
+
+```markdown
+# CLAUDE.md
+
+@./docs/architecture.md
+@./docs/conventions.md
+```
+
+Supported path formats:
+- `@path/to/file.md` — relative to the memory file's directory
+- `@./relative/path.md` — explicit relative path
+- `@~/home/path.md` — relative to your home directory
+- `@/absolute/path.md` — absolute path
+
+Includes are resolved up to 5 levels deep. Circular references are ignored. Only text-based file types (`.md`, `.ts`, `.json`, etc.) can be included; binary files are skipped.
+
+<Note>The maximum recommended size for a memory file is 40,000 characters. Larger files are loaded but may reduce the effectiveness of the instructions.</Note>
+
+## Editing memory with /memory
+
+The `/memory` command opens an interactive file selector for editing memory files:
+
+```
+> /memory
+```
+
+Select a file from the list to open it in your configured editor (`$VISUAL` or `$EDITOR`). If the file does not exist, Claude Code creates it before opening. After saving and closing the editor, changes take effect on the next context reload.
+
+<Tip>To change which editor `/memory` opens, set the `$VISUAL` or `$EDITOR` environment variable. For example: `export EDITOR=nvim`</Tip>
+
+## Creating CLAUDE.md with /init
+
+The `/init` command analyzes your project and generates or improves `CLAUDE.md`:
+
+```
+> /init
+```
+
+Claude surveys your codebase — reading `package.json`, `README.md`, build configs, CI definitions, and existing memory files — then asks clarifying questions before writing the file. You can choose to generate a project `CLAUDE.md`, a personal `CLAUDE.local.md`, or both.
+
+## Adding working directories with /add-dir
+
+By default, Claude's working directory is the directory where you launched `claude`. Use `/add-dir` to grant access to additional directories in the current session:
+
+```
+> /add-dir /path/to/shared/library
+Added /path/to/shared/library as a working directory for this session
+```
+
+When you confirm, Claude can read from and write to that directory, and its `CLAUDE.md` file (if present) is loaded into context.
+
+<Tip>Choose "Remember for this project" when adding a directory to persist it across sessions in your local settings.</Tip>
+
+## Context window management
+
+The context window is the live conversation: your messages, Claude's responses, tool calls, and file reads all consume tokens. Larger contexts cost more and can eventually hit the model's limit.
+
+### Viewing context usage
+
+```
+> /context
+```
+
+This shows a colored grid representing how the context window is allocated. Use it to understand how much space remains before you need to compact.
+
+### Compacting with /compact
+
+When the conversation is long, use `/compact` to summarize it:
+
+```
+> /compact
+```
+
+Claude replaces the conversation history with a compact summary, freeing context space while preserving the key decisions and information from the session. You can pass custom instructions to control what gets emphasized:
+
+```
+> /compact focus on the database schema decisions we made
+```
+
+After compaction, Claude confirms with the shortcut to expand the transcript if you want to review the full summary.
+
+### Automatic compaction warnings
+
+Claude Code tracks remaining context. When context is running low, it displays a warning:
+
+```
+Context running low — consider running /compact
+```
+
+Running `/compact` suppresses the warning for the rest of the session.
+
+<Warning>Compaction is not reversible within the session. If you need to refer back to specific earlier messages, use `Ctrl+O` to open the transcript view before compacting.</Warning>
+
+### Clearing the conversation with /clear
+
+To start completely fresh, use `/clear`:
+
+```
+> /clear
+```
+
+This discards the entire conversation history, resets session state, and starts a new session with a new session ID. Memory files are reloaded. Background tasks are preserved.
+
+`/clear` is also available as `/reset` and `/new`.
+
+## Memory file precedence summary
+
+When the same instruction appears in multiple files, the file with higher priority wins. For example, `CLAUDE.local.md` instructions override conflicting instructions in `CLAUDE.md`.
+
+This means you can commit safe defaults in `CLAUDE.md` and override them personally in `CLAUDE.local.md` without touching the shared file.

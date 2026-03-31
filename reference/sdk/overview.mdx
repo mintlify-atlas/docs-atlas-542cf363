@@ -1,0 +1,96 @@
+---
+title: "SDK Overview"
+description: "Use Claude Code programmatically from your own TypeScript or JavaScript applications."
+---
+
+The Claude Code SDK lets you embed the same agentic coding engine that powers the `claude` CLI directly into your own scripts, automation pipelines, and applications. Instead of spawning a subprocess or calling the Anthropic API yourself, you import a handful of functions and get a full agent loop — file editing, bash execution, MCP tool support, session persistence, and more — within your process.
+
+## Installation
+
+```bash
+npm install @anthropic-ai/claude-code
+```
+
+Node.js 18 or later is required.
+
+## Import paths
+
+The package exposes two import paths:
+
+| Path | Purpose |
+|---|---|
+| `@anthropic-ai/claude-code` | Main SDK export — `query()`, session helpers, `tool()`, `createSdkMcpServer()`, and all public types. |
+| `@anthropic-ai/claude-code/bridge` | Bridge subpath — control-protocol types (`SDKControlRequest`, `SDKControlResponse`) used by SDK **builders** (e.g. alternative language SDKs communicating with the CLI process over stdio). |
+
+Most users only need the main export.
+
+```typescript
+// Main SDK — use for automation scripts and app integrations
+import { query, listSessions, tool, createSdkMcpServer } from '@anthropic-ai/claude-code'
+
+// Bridge subpath — only for SDK builders implementing the control protocol
+import type { SDKControlRequest, SDKControlResponse } from '@anthropic-ai/claude-code/bridge'
+```
+
+## Key exports
+
+| Export | Type | Stability | Description |
+|---|---|---|---|
+| [`query()`](/reference/sdk/query) | function | Stable | Run a single prompt or streaming multi-turn conversation. |
+| [`unstable_v2_createSession()`](/reference/sdk/sessions) | function | Alpha | Create a persistent multi-turn session. |
+| [`unstable_v2_resumeSession()`](/reference/sdk/sessions) | function | Alpha | Resume an existing session by ID. |
+| [`unstable_v2_prompt()`](/reference/sdk/sessions) | function | Alpha | One-shot convenience wrapper around a session. |
+| [`listSessions()`](/reference/sdk/sessions) | function | Stable | List sessions with metadata. |
+| [`getSessionInfo()`](/reference/sdk/sessions) | function | Stable | Read metadata for a single session. |
+| [`getSessionMessages()`](/reference/sdk/sessions) | function | Stable | Read conversation messages from a session transcript. |
+| [`renameSession()`](/reference/sdk/sessions) | function | Stable | Rename a session. |
+| [`tagSession()`](/reference/sdk/sessions) | function | Stable | Tag or untag a session. |
+| [`forkSession()`](/reference/sdk/sessions) | function | Stable | Fork a session into a new branch. |
+| [`tool()`](/reference/sdk/tool) | function | Stable | Define a custom MCP tool for in-process use. |
+| [`createSdkMcpServer()`](/reference/sdk/tool) | function | Stable | Create an in-process MCP server from a set of tools. |
+| `AbortError` | class | Stable | Thrown when a query is aborted. |
+
+## Stability notes
+
+<Note>
+Functions prefixed with `unstable_v2_` are marked **alpha**. Their signatures may change in minor or patch releases without a major version bump. Pin your dependency to an exact version when using these APIs in production.
+</Note>
+
+All other exports follow semantic versioning — breaking changes only in major releases.
+
+## Quick example
+
+The following script sends a prompt to Claude, streams the response, and prints the final result:
+
+```typescript
+import { query } from '@anthropic-ai/claude-code'
+
+async function main() {
+  const stream = query({
+    prompt: 'List the TypeScript files in the current directory and count them.',
+    options: {
+      cwd: process.cwd(),
+      model: 'claude-opus-4-5',
+      maxTurns: 5,
+    },
+  })
+
+  for await (const message of stream) {
+    if (message.type === 'assistant') {
+      for (const block of message.message.content) {
+        if (block.type === 'text') {
+          process.stdout.write(block.text)
+        }
+      }
+    }
+
+    if (message.type === 'result') {
+      console.log('\n\n--- Done ---')
+      console.log(`Turns: ${message.num_turns}`)
+      console.log(`Cost: $${message.total_cost_usd.toFixed(4)}`)
+    }
+  }
+}
+
+main().catch(console.error)
+```

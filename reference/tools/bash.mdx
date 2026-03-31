@@ -1,0 +1,149 @@
+---
+title: "Bash Tool"
+description: "Execute shell commands in a persistent working directory, with support for background execution, timeouts, and sandbox mode."
+---
+
+The `Bash` tool runs shell commands and returns their output. It is Claude Code's primary mechanism for interacting with your system: running tests, invoking build tools, calling CLIs, managing git, and anything else that requires a terminal.
+
+<Note>
+Claude Code prefers dedicated tools (`Read`, `Edit`, `Write`, `Glob`, `Grep`) over equivalent Bash commands. Use `Bash` for tasks that don't have a dedicated tool: build systems, package managers, git operations, running tests, starting servers, etc.
+</Note>
+
+## Parameters
+
+<ParamField path="command" type="string" required>
+  The shell command to execute. The working directory persists between commands, but shell state (environment variables, functions, aliases) does not — each invocation starts from a fresh shell initialized from your profile.
+</ParamField>
+
+<ParamField path="timeout" type="number">
+  Optional timeout in milliseconds. Maximum is 600,000 ms (10 minutes). Default is 120,000 ms (2 minutes). If the command exceeds the timeout, it is automatically moved to the background.
+</ParamField>
+
+<ParamField path="description" type="string">
+  A short, plain-language description of what the command does. Shown in the UI and used in permission prompts. Keep it concise (5–10 words for simple commands; a sentence for complex pipelines).
+
+  Examples:
+  - `ls` → `"List files in current directory"`
+  - `git status` → `"Show working tree status"`
+  - `find . -name "*.tmp" -exec rm {} \;` → `"Find and delete all .tmp files recursively"`
+</ParamField>
+
+<ParamField path="run_in_background" type="boolean" default="false">
+  When `true`, the command is launched in the background and control returns immediately. Claude Code will notify you when the command completes. The output can be read later using the `Read` tool with the task output path.
+
+  Do not use `&` at the end of the command when using this parameter — they serve the same purpose.
+</ParamField>
+
+<ParamField path="dangerouslyDisableSandbox" type="boolean" default="false">
+  When `true`, bypasses sandbox restrictions for this command. Only set this when you have confirmed that a sandbox restriction is causing a specific failure. Each sandboxed command is evaluated independently — a previous `dangerouslyDisableSandbox: true` call does not carry over.
+</ParamField>
+
+## Output
+
+<ResponseField name="stdout" type="string">Standard output of the command. Stderr is merged into stdout.</ResponseField>
+<ResponseField name="stderr" type="string">Shell reset messages or other out-of-band output. Usually empty.</ResponseField>
+<ResponseField name="interrupted" type="boolean">Whether the command was aborted before completion.</ResponseField>
+<ResponseField name="backgroundTaskId" type="string">Task ID if the command is running in the background. Use to track or stop the task.</ResponseField>
+<ResponseField name="returnCodeInterpretation" type="string">Semantic interpretation of non-zero exit codes that have special meaning for specific commands.</ResponseField>
+<ResponseField name="noOutputExpected" type="boolean">Set to `true` for commands that produce no stdout on success (e.g., `mv`, `cp`, `mkdir`).</ResponseField>
+<ResponseField name="persistedOutputPath" type="string">Path to the full output file when output was too large to return inline. Read this file with the `Read` tool.</ResponseField>
+
+## Security and sandbox mode
+
+When sandbox mode is enabled (the default in many environments), commands run inside a sandbox that restricts:
+
+- **Filesystem writes** — only allowed directories can be written to
+- **Filesystem reads** — certain paths may be blocked
+- **Network access** — only allowed hosts can be contacted
+
+If a command fails with "Operation not permitted", "Access denied", or a network connection error, the sandbox may be the cause. You can retry with `dangerouslyDisableSandbox: true` to confirm, but prefer adjusting your sandbox configuration via `/sandbox` rather than permanently disabling it.
+
+<Warning>
+Do not use `dangerouslyDisableSandbox: true` by default or preemptively. Only use it after you have confirmed that a sandbox restriction is causing the failure. Sensitive paths (e.g., `~/.bashrc`, `~/.ssh/*`, credential files) should never be added to the sandbox allowlist.
+</Warning>
+
+Temporary files should always use `$TMPDIR` rather than `/tmp` directly. In sandbox mode, `$TMPDIR` is set to a sandbox-writable location automatically.
+
+```bash Using $TMPDIR for temporary files
+tmpfile=$(mktemp "$TMPDIR/output.XXXXXX")
+some-command > "$tmpfile"
+```
+
+## Background execution
+
+Use `run_in_background: true` for long-running commands when you don't need the result immediately:
+
+- Development servers (`npm run dev`, `python -m http.server`)
+- Build processes that take more than a few seconds
+- Commands you want to run in parallel with other work
+
+```text Start a dev server in the background
+command: "npm run dev"
+description: "Start Next.js development server"
+run_in_background: true
+```
+
+Claude Code will notify you when the background task completes. You do not need to poll for its status.
+
+<Note>
+If a blocking command runs for more than 15 seconds in assistant mode, Claude Code may automatically move it to the background to keep the session responsive. The command continues running — no state is lost.
+</Note>
+
+### Stopping background tasks
+
+Background tasks have a `backgroundTaskId`. You can stop them using the `TaskStop` tool with that ID.
+
+## Timeout handling
+
+The default timeout is 2 minutes. For long-running operations, set an explicit timeout:
+
+```text Run tests with a 5-minute timeout
+command: "npm run test:integration"
+timeout: 300000
+description: "Run integration test suite"
+```
+
+If a command times out without `run_in_background: true`, it is automatically moved to the background (when background tasks are enabled). The output is written to a file that can be read with the `Read` tool.
+
+## Examples
+
+```text Install dependencies
+command: "npm install"
+description: "Install package dependencies"
+```
+
+```text Run tests
+command: "npm test"
+description: "Run test suite"
+```
+
+```text Create a commit
+command: |
+  git add src/
+  git commit -m "$(cat <<'EOF'
+  Fix null pointer in user authentication
+  EOF
+  )"
+description: "Stage and commit authentication fix"
+```
+
+```text Chain commands with error propagation
+command: "npm run lint && npm run test && npm run build"
+description: "Lint, test, and build project"
+```
+
+```text Start a background server
+command: "python -m http.server 8080"
+description: "Start HTTP server on port 8080"
+run_in_background: true
+```
+
+## Usage guidelines
+
+- **Prefer dedicated tools** — use `Read`, `Edit`, `Write`, `Glob`, and `Grep` instead of `cat`, `sed`, `find`, and `grep`.
+- **Use absolute paths** in commands when referencing files.
+- **Quote paths with spaces**: `cd "path with spaces"`.
+- **Chain related commands** with `&&` rather than running them as separate tool calls when they must run sequentially.
+- **Parallel independent commands** should be separate tool calls issued at the same time, not chained with `;`.
+- **Avoid `sleep`** for polling — use `run_in_background` and wait for the completion notification instead.
+- **Avoid interactive commands** (e.g., `git rebase -i`, `git add -i`) — Claude Code does not support interactive terminal input.

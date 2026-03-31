@@ -1,0 +1,146 @@
+---
+title: "Web Tools"
+description: "WebFetch and WebSearch — retrieve and search web content from within Claude Code."
+---
+
+Claude Code includes two web tools: `WebFetch` for fetching a specific URL and `WebSearch` for discovering information across the web.
+
+---
+
+## WebFetch
+
+Fetches content from a URL and processes it with an AI model to extract the information you need. HTML is converted to Markdown before processing.
+
+### Parameters
+
+<ParamField path="url" type="string" required>
+  The fully-formed URL to fetch. HTTP URLs are automatically upgraded to HTTPS. Must be a valid URL — an invalid URL will produce an error without making a network request.
+</ParamField>
+
+<ParamField path="prompt" type="string" required>
+  Instructions describing what information to extract from the fetched page. The content is processed by a small, fast model using this prompt, and the model's response is returned.
+
+  Example: `"What are the required parameters for the createUser endpoint?"`
+</ParamField>
+
+### Output
+
+<ResponseField name="result" type="string">The processed response from the model, based on the fetched content and the prompt.</ResponseField>
+<ResponseField name="url" type="string">The URL that was fetched.</ResponseField>
+<ResponseField name="code" type="number">HTTP response status code.</ResponseField>
+<ResponseField name="codeText" type="string">HTTP response status text (e.g., `"OK"`, `"Not Found"`).</ResponseField>
+<ResponseField name="bytes" type="number">Size of the fetched content in bytes.</ResponseField>
+<ResponseField name="durationMs" type="number">Time taken to fetch and process the content in milliseconds.</ResponseField>
+
+### Usage notes
+
+- **Authenticated URLs will fail.** WebFetch cannot access Google Docs, Confluence, Jira, GitHub private repos, or any URL requiring a login. Use a specialized MCP tool if you need authenticated access.
+- If an MCP server provides a web fetch tool, prefer it — it may have fewer restrictions.
+- For GitHub URLs, prefer using the `gh` CLI via the `Bash` tool (e.g., `gh pr view`, `gh issue view`).
+- HTTP redirects to the same host are followed automatically. Redirects to a **different host** are surfaced in the `result` field with the redirect URL. Make a new `WebFetch` call with the redirect URL to continue.
+- Results may be summarized when content is very large.
+- A 15-minute cache is maintained for repeated fetches of the same URL.
+- Binary content (PDFs, etc.) is saved to a temporary file and the path is noted in `result`.
+
+### Permissions
+
+WebFetch requires permission before fetching from a domain. Claude Code will prompt you on the first request to a new domain. You can permanently allow a domain in your settings.
+
+### Examples
+
+```text Fetch API documentation
+url: "https://docs.example.com/api/reference"
+prompt: "List all available endpoints and their HTTP methods"
+```
+
+```text Extract a code example
+url: "https://docs.example.com/quickstart"
+prompt: "Show me the minimal code example for getting started"
+```
+
+```text Check library version requirements
+url: "https://github.com/example/library/blob/main/package.json"
+prompt: "What are the peer dependencies and their version constraints?"
+```
+
+---
+
+## WebSearch
+
+Searches the web and returns results with summaries and source links. Uses Anthropic's web search capability, which performs searches automatically within a single API call.
+
+<Note>
+WebSearch is only available when using Anthropic's API directly (first-party), Vertex AI with Claude 4.0+ models, or Foundry. It is not available with all API configurations.
+</Note>
+
+### Parameters
+
+<ParamField path="query" type="string" required>
+  The search query. Minimum 2 characters. Be specific — include the current year when searching for recent information, documentation, or news.
+</ParamField>
+
+<ParamField path="allowed_domains" type="string[]">
+  When provided, only include search results from these domains. Cannot be used together with `blocked_domains`.
+
+  Example: `["docs.python.org", "pypi.org"]`
+</ParamField>
+
+<ParamField path="blocked_domains" type="string[]">
+  When provided, exclude search results from these domains. Cannot be used together with `allowed_domains`.
+
+  Example: `["stackoverflow.com"]`
+</ParamField>
+
+### Output
+
+<ResponseField name="query" type="string">The search query that was executed.</ResponseField>
+<ResponseField name="results" type="array">
+  An array of search result objects and text commentary from the model. Each element is either:
+
+  <Expandable title="Search result object">
+    <ResponseField name="tool_use_id" type="string">ID of the search tool use.</ResponseField>
+    <ResponseField name="content" type="array">
+      Array of search hits. Each hit has:
+      - `title` (string): The result title
+      - `url` (string): The result URL
+    </ResponseField>
+  </Expandable>
+
+  Or a plain string containing the model's commentary or summary.
+</ResponseField>
+<ResponseField name="durationSeconds" type="number">Time taken to complete the search operation.</ResponseField>
+
+### Response format
+
+Claude Code's response to a `WebSearch` call includes both the search results and a synthesized answer. **Sources must be cited** at the end of the response as markdown hyperlinks.
+
+```text Example response format
+[Answer based on search results]
+
+Sources:
+- [Source Title 1](https://example.com/1)
+- [Source Title 2](https://example.com/2)
+```
+
+### Usage notes
+
+- WebSearch is only available in the US.
+- A single WebSearch call may internally perform up to 8 sub-searches.
+- Domain filtering (`allowed_domains` and `blocked_domains`) is mutually exclusive — only provide one or the other.
+- Always include the current year in queries about recent releases, documentation versions, or current events.
+
+### Examples
+
+```text Search for library documentation
+query: "React 19 new features 2025"
+```
+
+```text Search within specific domains
+query: "Python asyncio tutorial"
+allowed_domains: ["docs.python.org", "realpython.com"]
+```
+
+```text Search excluding specific domains
+query: "best practices for JWT authentication"
+blocked_domains: ["medium.com"]
+```

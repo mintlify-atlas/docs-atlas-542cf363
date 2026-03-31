@@ -1,0 +1,172 @@
+---
+title: "Voice Input"
+description: "Use voice input to dictate prompts to Claude Code with hold-to-talk or focus-mode recording."
+---
+
+Claude Code supports voice input via a hold-to-talk interface powered by Anthropic's speech-to-text backend. Speak your prompt, release the key, and the transcript is submitted to Claude automatically.
+
+<Info>
+  Voice mode requires a Claude.ai account. Run `/login` to sign in before enabling it.
+</Info>
+
+## Enabling voice input
+
+Run the `/voice` command to toggle voice mode on or off:
+
+```bash
+/voice
+```
+
+Claude Code checks the following before enabling voice:
+
+1. **Authentication** — A Claude.ai account is required. If you are not logged in, you will be prompted to run `/login`.
+2. **Microphone access** — The system must be able to access a recording device. On macOS and Windows, an OS permission dialog may appear.
+3. **Audio recording tool** — Claude Code uses the native macOS audio capture module or [SoX](https://sox.sourceforge.net/) on Linux and Windows. If SoX is not installed, Claude Code shows the install command.
+
+When voice is successfully enabled, you will see:
+
+```
+Voice mode enabled. Hold Space to record.
+```
+
+Running `/voice` again disables it:
+
+```
+Voice mode disabled.
+```
+
+## Recording audio
+
+Voice input uses **hold-to-talk**: hold the configured key while speaking, then release to submit.
+
+- **Default keybinding** — `Space` in the Chat input context.
+- Hold the key to start recording. Release to stop and send the transcript.
+- A waveform visualizer shows audio levels while recording.
+- Interim transcripts appear in real time as you speak.
+- After you release the key, the state briefly shows **processing** while the transcript is finalized, then the text is injected into the prompt input.
+
+<Tip>
+  Short taps (under 2 seconds) are silently discarded to avoid accidental activations. Hold the key for at least 2 seconds when dictating.
+</Tip>
+
+## Supported languages
+
+Voice input uses Anthropic's `voice_stream` speech-to-text endpoint backed by Deepgram. The following languages are supported:
+
+| Language | BCP-47 code |
+|----------|-------------|
+| English | `en` |
+| Spanish | `es` |
+| French | `fr` |
+| Japanese | `ja` |
+| German | `de` |
+| Portuguese | `pt` |
+| Italian | `it` |
+| Korean | `ko` |
+| Hindi | `hi` |
+| Indonesian | `id` |
+| Russian | `ru` |
+| Polish | `pl` |
+| Turkish | `tr` |
+| Dutch | `nl` |
+| Ukrainian | `uk` |
+| Greek | `el` |
+| Czech | `cs` |
+| Danish | `da` |
+| Swedish | `sv` |
+| Norwegian | `no` |
+
+### Setting your dictation language
+
+Configure the dictation language via `/config`. The setting accepts both language names (e.g. `French`, `Français`) and BCP-47 codes (e.g. `fr`).
+
+When voice is enabled, Claude Code shows the resolved language code:
+
+```
+Voice mode enabled. Hold Space to record. Dictation language: fr (/config to change).
+```
+
+If the configured language is not supported, Claude Code falls back to English and shows a notice:
+
+```
+Note: "Klingon" is not a supported dictation language; using English. Change it via /config.
+```
+
+## Focus mode
+
+Focus mode is an advanced recording option for multi-window workflows. When enabled, recording starts automatically whenever the Claude Code terminal gains focus and stops when it loses focus.
+
+- Each final transcript is injected immediately, keeping the connection alive for continuous dictation.
+- A silence timeout of **5 seconds** tears down the session if no speech is detected. The next focus cycle re-arms recording.
+- Focus mode recording is driven by window focus, not keypresses.
+
+Enable focus mode from `/config`.
+
+## Tips for effective voice prompting
+
+<AccordionGroup>
+  <Accordion title="Speak naturally in complete sentences">
+    The speech-to-text model performs best with complete, natural sentences. Avoid spelling out words letter-by-letter or pausing mid-sentence.
+  </Accordion>
+  <Accordion title="State the task clearly upfront">
+    Start with the action: "Refactor the `parseConfig` function to return an error instead of throwing" rather than trailing off and adding context afterwards.
+  </Accordion>
+  <Accordion title="Use technical terms confidently">
+    Claude Code sends key terms from your conversation history as hints to the STT backend to improve recognition of identifiers, function names, and project-specific vocabulary.
+  </Accordion>
+  <Accordion title="Hold long enough">
+    Recordings shorter than 2 seconds are silently dropped. Hold the key for the full duration of your dictation, including a brief pause at the end before releasing.
+  </Accordion>
+  <Accordion title="Check your microphone input device">
+    If you see "No audio detected from microphone", verify that the correct input device is selected in your system audio settings and that Claude Code has microphone access.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Voice mode requires a Claude.ai account">
+    Voice mode is only available when authenticated with a Claude.ai account. Run `/login` and sign in, then run `/voice` again.
+  </Accordion>
+  <Accordion title="No audio recording tool found">
+    On Linux and Windows, Claude Code requires SoX for audio recording. Install it with:
+
+    <Tabs>
+      <Tab title="macOS">
+        ```bash
+        brew install sox
+        ```
+      </Tab>
+      <Tab title="Ubuntu / Debian">
+        ```bash
+        sudo apt-get install sox
+        ```
+      </Tab>
+      <Tab title="Windows">
+        Download SoX from [https://sox.sourceforge.net/](https://sox.sourceforge.net/) or use `winget`:
+        ```bash
+        winget install sox
+        ```
+      </Tab>
+    </Tabs>
+  </Accordion>
+  <Accordion title="Microphone access is denied">
+    Claude Code needs microphone permission from the OS:
+
+    - **macOS** — Go to **System Settings → Privacy & Security → Microphone** and enable access for your terminal app.
+    - **Windows** — Go to **Settings → Privacy → Microphone** and allow access.
+    - **Linux** — Check your system's audio settings and PipeWire/PulseAudio permissions.
+
+    After granting access, run `/voice` again.
+  </Accordion>
+  <Accordion title="No speech detected after recording">
+    If you held the key for more than 2 seconds but received "No speech detected":
+
+    - Verify your microphone is not muted at the hardware or system level.
+    - Check that the correct input device is selected.
+    - Try a different recording environment to rule out background noise issues.
+  </Accordion>
+  <Accordion title="Voice connection failed">
+    A connection failure usually means the WebSocket to Anthropic's speech-to-text backend could not be established. Check your network connection and try again. If you are behind a proxy or firewall, ensure WebSocket connections to Anthropic's API are allowed.
+  </Accordion>
+</AccordionGroup>

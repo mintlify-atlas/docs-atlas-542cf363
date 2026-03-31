@@ -1,0 +1,307 @@
+---
+title: "Automation and Scripting"
+description: "Run Claude Code non-interactively in CI/CD pipelines, scripts, and scheduled tasks."
+---
+
+Claude Code supports headless (non-interactive) execution for use in automated pipelines, scripts, and scheduled workflows. Pass a prompt via flag or stdin and pipe the output to other tools.
+
+## Non-interactive mode (`--print` / `-p`)
+
+The `--print` (or `-p`) flag runs Claude Code without the interactive REPL, prints the result to stdout, and exits.
+
+```bash
+claude --print "Summarize the changes in the last 5 commits"
+```
+
+```bash
+claude -p "Are there any obvious bugs in src/auth.ts?"
+```
+
+<Note>
+In `--print` mode, Claude Code will not prompt for permissions. Ensure your project settings or `--allowedTools` flag permit all the operations needed.
+</Note>
+
+## Piping input
+
+Pass a prompt over stdin by omitting the prompt argument:
+
+```bash
+echo "Review this diff for security issues" | claude --print
+```
+
+Combine with command substitution to inject dynamic context:
+
+```bash
+git diff HEAD~1 | claude --print "Summarize these changes for a changelog entry"
+```
+
+```bash
+cat error.log | claude -p "What is causing this error and how do I fix it?"
+```
+
+## Output modes
+
+Control what Claude Code writes to stdout with `--output-format`:
+
+<Tabs>
+  <Tab title="text (default)">
+    Plain text — Claude's final response only.
+
+    ```bash
+    claude -p "List all TODO comments" --output-format text
+    ```
+  </Tab>
+  <Tab title="json">
+    JSON object with the result and metadata.
+
+    ```bash
+    claude -p "Count the lines of code" --output-format json
+    ```
+
+    ```json
+    {
+      "type": "result",
+      "subtype": "success",
+      "result": "The project has 12,450 lines of code.",
+      "usage": {
+        "inputTokens": 1200,
+        "outputTokens": 18,
+        "costUSD": 0.002
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="stream-json">
+    Newline-delimited JSON — one `SDKMessage` object per line, streamed as they arrive. Useful for real-time processing.
+
+    ```bash
+    claude -p "Run the tests" --output-format stream-json | jq 'select(.type == "assistant")'
+    ```
+  </Tab>
+</Tabs>
+
+## CI/CD integration
+
+### GitHub Actions
+
+```yaml
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Review PR
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          git diff origin/main...HEAD | claude -p \
+            "Review this pull request diff. Report any bugs, security issues, or style violations." \
+            --output-format text
+```
+
+### GitLab CI
+
+```yaml
+code-review:
+  stage: test
+  image: node:20
+  before_script:
+    - npm install -g @anthropic-ai/claude-code
+  script:
+    - git diff $CI_MERGE_REQUEST_DIFF_BASE_SHA...HEAD |
+        claude -p "Summarize what changed and flag any issues" --output-format json
+  variables:
+    ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
+```
+
+### Restricting tools in CI
+
+In automated contexts, lock down what Claude can do:
+
+```bash
+claude -p "Fix the failing tests" \
+  --allowedTools "Read,Edit,Bash(npm test)" \
+  --permission-mode acceptEdits
+```
+
+## Environment variables
+
+<Accordion title="Authentication">
+| Variable | Description |
+|----------|-------------|
+| `ANTHROPIC_API_KEY` | Anthropic API key. Required unless using OAuth. |
+| `ANTHROPIC_AUTH_TOKEN` | Alternative: raw Bearer token. |
+| `CLAUDE_CODE_USE_BEDROCK=1` | Use Amazon Bedrock instead of the Anthropic API. |
+| `CLAUDE_CODE_USE_VERTEX=1` | Use Google Vertex AI. |
+| `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Credentials for Bedrock. |
+| `ANTHROPIC_VERTEX_PROJECT_ID`, `CLOUD_ML_REGION` | Credentials for Vertex. |
+</Accordion>
+
+<Accordion title="Model and behavior">
+| Variable | Description |
+|----------|-------------|
+| `ANTHROPIC_MODEL` | Default model ID to use. |
+| `ANTHROPIC_SMALL_FAST_MODEL` | Model used for lightweight background tasks. |
+| `MAX_THINKING_TOKENS` | Token budget for extended thinking. |
+| `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | Override max output tokens per response. |
+</Accordion>
+
+<Accordion title="Automation and CI">
+| Variable | Description |
+|----------|-------------|
+| `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` | Prevent agents from being launched in the background. |
+| `CLAUDE_AUTO_BACKGROUND_TASKS=1` | Automatically background long-running agents after 2 minutes. |
+| `CLAUDE_CODE_STREAM_CLOSE_TIMEOUT` | Stream close timeout in ms (default 60000). Increase for long-running MCP tools. |
+| `BASH_DEFAULT_TIMEOUT_MS` | Default timeout for Bash tool executions. |
+| `BASH_MAX_TIMEOUT_MS` | Maximum allowed timeout for Bash. |
+</Accordion>
+
+<Accordion title="Paths and storage">
+| Variable | Description |
+|----------|-------------|
+| `CLAUDE_CONFIG_DIR` | Override the default config directory (`~/.claude`). |
+| `TMPDIR` | Override the temporary directory used for task output files. |
+</Accordion>
+
+## Exit codes
+
+Claude Code exits with standard Unix codes:
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success — Claude completed the task |
+| `1` | Error — an unrecoverable error occurred |
+| `2` | Usage error — invalid flags or arguments |
+
+In `--print` mode, check the exit code to detect failures in scripts:
+
+```bash
+if ! claude -p "Run the linter and fix all errors" --output-format text; then
+  echo "Claude Code failed" >&2
+  exit 1
+fi
+```
+
+## Scheduled tasks (cron)
+
+Claude Code supports scheduled tasks stored in `.claude/scheduled_tasks.json`. Each task has a cron expression and a prompt:
+
+```json
+[
+  {
+    "id": "daily-dep-check",
+    "cron": "0 9 * * 1-5",
+    "prompt": "Check for outdated npm dependencies and open a PR if any are found.",
+    "recurring": true
+  },
+  {
+    "id": "weekly-security-scan",
+    "cron": "0 8 * * 1",
+    "prompt": "Run a security audit on the codebase and report findings.",
+    "recurring": true
+  }
+]
+```
+
+The `CronTask` type used by the SDK daemon:
+
+```typescript
+type CronTask = {
+  id: string
+  cron: string           // Standard cron expression (5 fields)
+  prompt: string         // Prompt sent to Claude when the task fires
+  createdAt: number      // Unix timestamp (ms)
+  recurring?: boolean    // If false, task fires once and is deleted
+}
+```
+
+### Watching scheduled tasks programmatically
+
+The `watchScheduledTasks` function is available for daemon architectures that own the scheduler externally:
+
+```typescript
+import { watchScheduledTasks, query } from '@anthropic-ai/claude-code'
+
+const handle = watchScheduledTasks({
+  dir: '/path/to/project',
+  signal: abortController.signal,
+})
+
+// handle.getNextFireTime() returns the epoch ms of the soonest fire, or null
+const nextFire = handle.getNextFireTime()
+
+for await (const event of handle.events()) {
+  if (event.type === 'fire') {
+    // Run the task
+    for await (const msg of query({ prompt: event.task.prompt })) {
+      console.log(msg)
+    }
+  }
+  if (event.type === 'missed') {
+    // One-shot tasks whose window passed while the daemon was down
+    console.warn('Missed tasks:', event.tasks.map(t => t.id))
+  }
+}
+```
+
+<Note>
+`watchScheduledTasks` acquires a per-directory scheduler lock so a REPL session in the same directory won't double-fire tasks. The lock is released when the abort signal fires.
+</Note>
+
+## Scripting patterns
+
+### Check output in a shell script
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+RESULT=$(claude -p "Does the README mention the required Node.js version?" \
+  --output-format text)
+
+echo "Claude says: $RESULT"
+```
+
+### Process stream-json output with Node.js
+
+```javascript
+import { spawn } from 'child_process'
+import { createInterface } from 'readline'
+
+const proc = spawn('claude', ['-p', 'List all exported functions', '--output-format', 'stream-json'])
+
+const rl = createInterface({ input: proc.stdout })
+
+rl.on('line', line => {
+  const msg = JSON.parse(line)
+  if (msg.type === 'assistant') {
+    process.stdout.write(msg.message.content.map(b => b.text ?? '').join(''))
+  }
+})
+
+proc.on('close', code => {
+  process.exit(code)
+})
+```
+
+### Inject context via `--system-prompt`
+
+Provide domain-specific instructions for automated runs without modifying project settings:
+
+```bash
+claude -p "Review the migration script" \
+  --system-prompt "You are reviewing database migration scripts. Flag any irreversible operations that lack a rollback strategy." \
+  --output-format text
+```

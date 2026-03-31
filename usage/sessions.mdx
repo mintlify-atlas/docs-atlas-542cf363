@@ -1,0 +1,132 @@
+---
+title: "Sessions"
+description: "Understand how Claude Code sessions work, how to resume previous conversations, and how to manage session history."
+---
+
+A session is a persistent conversation between you and Claude Code. Sessions store your conversation history, file context, and any memory Claude has built up — so you can resume exactly where you left off.
+
+## How sessions work
+
+Each time you run `claude` in a directory, a session is created and stored as a JSONL transcript file. Sessions are tied to your project directory and persist across terminal restarts.
+
+```bash
+# Start a new session
+claude
+
+# Continue the most recent session in the current directory
+claude --continue
+# or
+claude -c
+
+# Resume by session ID or title (opens interactive picker with no argument)
+claude --resume
+# or
+claude -r
+```
+
+## The /session command
+
+Use `/session` inside an interactive session to view your current session's URL and QR code when connected in remote mode.
+
+```
+> /session
+```
+
+<Note>
+The `/session` command shows a QR code link only when Claude Code is running in remote mode (started with `--remote`). In local mode it shows your current session info.
+</Note>
+
+## Listing and resuming sessions
+
+You can resume past sessions directly from the command line:
+
+```bash
+# Resume the most recent session in the current directory
+claude --resume
+# or using the short flag
+claude -r
+
+# Open the interactive resume picker (search by title or ID)
+claude -r "auth refactor"
+
+# Resume a specific session by full session ID
+claude -r a1b2c3d4-e5f6-...
+```
+
+The interactive resume picker lists recent sessions sorted by last active time and shows each session's title and timestamp.
+
+You can also resume from inside an active session using the `/resume` command:
+
+```
+> /resume
+> /resume "auth refactor"
+```
+
+## Session management via the SDK
+
+If you're using the [Claude Code SDK](/reference/sdk/sessions), you can manage sessions programmatically:
+
+```typescript
+import { listSessions, getSessionInfo, getSessionMessages, renameSession, tagSession, forkSession } from '@anthropic-ai/claude-code'
+
+// List sessions for a project
+const sessions = await listSessions({ dir: '/path/to/project' })
+
+// Get a single session's metadata
+const info = await getSessionInfo(sessionId)
+
+// Read the conversation messages
+const messages = await getSessionMessages(sessionId, { limit: 50 })
+
+// Rename a session
+await renameSession(sessionId, 'Refactor auth module')
+
+// Tag a session for later reference
+await tagSession(sessionId, 'important')
+
+// Fork a session from a specific point
+const { sessionId: newId } = await forkSession(sessionId, {
+  upToMessageId: messages[10].uuid
+})
+```
+
+## Background sessions
+
+Claude Code can run sessions in the background while you continue working. Background sessions are useful for long-running tasks like large refactors or test runs.
+
+```bash
+# Start Claude with a prompt and run in background
+claude --print "Run all tests and fix any failures" &
+```
+
+You can also spawn background agents within a session:
+
+```
+> Launch a background agent to audit all TODO comments in the codebase
+```
+
+<Tip>
+Use `/cost` to check token usage and estimated cost for the current session at any time.
+</Tip>
+
+## Session storage
+
+Sessions are stored locally as JSONL files. The default location is:
+
+| Platform | Path |
+|----------|------|
+| macOS / Linux | `~/.claude/projects/<project-hash>/` |
+| Windows | `%APPDATA%\Claude\projects\<project-hash>\` |
+
+Each session file contains the full message transcript, including tool calls and results.
+
+## Clearing and compacting
+
+If a session grows too long, use `/compact` to summarize older context and free up space in the context window, or `/clear` to start a fresh conversation while staying in the same session.
+
+```
+> /compact
+> /clear
+```
+
+See [Memory and Context](/usage/memory-and-context) for more details on managing context.

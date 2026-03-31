@@ -1,0 +1,330 @@
+---
+title: "SDK Overview"
+description: "Embed Claude Code in your own applications using the @anthropic-ai/claude-code package."
+---
+
+The Claude Code SDK lets you drive Claude Code programmatically from TypeScript or JavaScript. You can send prompts, stream responses, manage multi-turn sessions, and build tools that run in the same process.
+
+## Installation
+
+```bash
+npm install @anthropic-ai/claude-code
+```
+
+```bash
+yarn add @anthropic-ai/claude-code
+```
+
+## The `query()` function
+
+`query()` is the core primitive. It accepts a prompt string (or an async iterable of user messages) and returns an async iterable of `SDKMessage` objects.
+
+```typescript
+import { query } from '@anthropic-ai/claude-code'
+
+const stream = query({
+  prompt: 'List the files in the current directory',
+  options: {
+    maxTurns: 5,
+  },
+})
+
+for await (const message of stream) {
+  if (message.type === 'assistant') {
+    console.log(message.message.content)
+  }
+  if (message.type === 'result') {
+    console.log('Session cost:', message.usage?.costUSD)
+  }
+}
+```
+
+### Streaming user messages
+
+Pass an `AsyncIterable<SDKUserMessage>` as the `prompt` to send follow-up messages mid-stream:
+
+```typescript
+import { query } from '@anthropic-ai/claude-code'
+import type { SDKUserMessage } from '@anthropic-ai/claude-code'
+
+async function* userMessages(): AsyncIterable<SDKUserMessage> {
+  yield { type: 'user', message: { role: 'user', content: 'Hello!' } }
+  await someDelay()
+  yield { type: 'user', message: { role: 'user', content: 'Now run the tests.' } }
+}
+
+for await (const message of query({ prompt: userMessages() })) {
+  // handle messages
+}
+```
+
+## Key types
+
+<Accordion title="SDKMessage">
+Messages yielded by `query()` are a discriminated union keyed on `type`:
+
+| `type` | Description |
+|--------|-------------|
+| `user` | A user turn (echoed back) |
+| `assistant` | An assistant turn with content blocks |
+| `tool_use` | Claude invoking a tool |
+| `tool_result` | The result of a tool call |
+| `result` | Final result message with usage stats |
+| `system` | System-level metadata |
+
+```typescript
+for await (const msg of query({ prompt: 'Summarize this repo' })) {
+  switch (msg.type) {
+    case 'assistant':
+      // msg.message.content is ContentBlock[]
+      break
+    case 'result':
+      // msg.subtype is 'success' | 'error_max_turns' | ...
+      // msg.usage contains token counts and cost
+      break
+  }
+}
+```
+</Accordion>
+
+<Accordion title="Options">
+Pass an `Options` object to control behavior:
+
+```typescript
+const stream = query({
+  prompt: 'Fix the type errors',
+  options: {
+    // Working directory
+    cwd: '/path/to/project',
+
+    // Max agent turns before stopping
+    maxTurns: 10,
+
+    // Model override
+    model: 'claude-sonnet-4-6',
+
+    // Custom system prompt
+    systemPrompt: 'You are a TypeScript expert.',
+
+    // Append to the default system prompt
+    appendSystemPrompt: 'Always prefer const over let.',
+
+    // Permission mode
+    permissionMode: 'acceptEdits',
+
+    // Allowed tools (restrict what Claude can use)
+    allowedTools: ['Read', 'Bash', 'Edit'],
+
+    // MCP server configurations
+    mcpServers: {
+      myServer: {
+        type: 'stdio',
+        command: 'node',
+        args: ['./mcp-server.js'],
+      },
+    },
+  },
+})
+```
+</Accordion>
+
+<Accordion title="ModelUsage">
+The `result` message includes usage data:
+
+```typescript
+if (msg.type === 'result') {
+  const usage = msg.usage
+  // {
+  //   inputTokens: number
+  //   outputTokens: number
+  //   cacheReadInputTokens: number
+  //   cacheCreationInputTokens: number
+  //   webSearchRequests: number
+  //   costUSD: number
+  //   contextWindow: number
+  //   maxOutputTokens: number
+  // }
+}
+```
+</Accordion>
+
+## Session management (V2 API)
+
+The V2 API provides persistent multi-turn sessions. These APIs are currently **unstable** (`@alpha`).
+
+<Warning>
+The V2 session APIs are prefixed with `unstable_v2_`. Signatures may change in future releases.
+</Warning>
+
+### Creating a session
+
+```typescript
+import { unstable_v2_createSession } from '@anthropic-ai/claude-code'
+
+const session = unstable_v2_createSession({
+  model: 'claude-sonnet-4-6',
+  cwd: '/path/to/project',
+  permissionMode: 'acceptEdits',
+})
+```
+
+### Sending messages to a session
+
+```typescript
+// Send a message and stream the response
+for await (const message of session.query('What files are here?')) {
+  console.log(message)
+}
+
+// Send a follow-up (same session context)
+for await (const message of session.query('Now edit the README')) {
+  console.log(message)
+}
+```
+
+### Resuming a session
+
+```typescript
+import { unstable_v2_resumeSession } from '@anthropic-ai/claude-code'
+
+const session = unstable_v2_resumeSession(sessionId, {
+  model: 'claude-sonnet-4-6',
+})
+```
+
+### One-shot convenience function
+
+For single prompts without managing a session object:
+
+```typescript
+import { unstable_v2_prompt } from '@anthropic-ai/claude-code'
+
+const result = await unstable_v2_prompt('What files are here?', {
+  model: 'claude-sonnet-4-6',
+  cwd: '/path/to/project',
+})
+// result is an SDKResultMessage
+```
+
+## Session utilities
+
+These functions read and manage session transcripts stored on disk.
+
+<CardGroup cols={2}>
+  <Card title="listSessions" icon="list">
+    List sessions with metadata, optionally filtered by project directory. Supports `limit` and `offset` for pagination.
+
+    ```typescript
+    const sessions = await listSessions({ dir: '/path/to/project' })
+    const page2 = await listSessions({ limit: 50, offset: 50 })
+    ```
+  </Card>
+  <Card title="getSessionInfo" icon="circle-info">
+    Read metadata for a single session by ID without scanning all sessions.
+
+    ```typescript
+    const info = await getSessionInfo(sessionId, { dir: '/path/to/project' })
+    ```
+  </Card>
+  <Card title="getSessionMessages" icon="messages">
+    Read conversation messages from a session's JSONL transcript. Returns messages in chronological order.
+
+    ```typescript
+    const messages = await getSessionMessages(sessionId, {
+      limit: 100,
+      offset: 0,
+      includeSystemMessages: false,
+    })
+    ```
+  </Card>
+  <Card title="forkSession" icon="code-fork">
+    Fork a session into a new branch with fresh UUIDs. Supports branching from a specific message with `upToMessageId`.
+
+    ```typescript
+    const { sessionId: newId } = await forkSession(sessionId, {
+      upToMessageId: messageUuid,
+      title: 'Experiment branch',
+    })
+    ```
+  </Card>
+</CardGroup>
+
+### Renaming and tagging sessions
+
+```typescript
+import { renameSession, tagSession } from '@anthropic-ai/claude-code'
+
+// Rename
+await renameSession(sessionId, 'My refactoring session')
+
+// Tag
+await tagSession(sessionId, 'needs-review')
+
+// Clear a tag
+await tagSession(sessionId, null)
+```
+
+## Custom MCP tools
+
+Register tools that run in the same process as the SDK:
+
+```typescript
+import { tool, createSdkMcpServer, query } from '@anthropic-ai/claude-code'
+import { z } from 'zod'
+
+const getWeather = tool(
+  'get_weather',
+  'Get the current weather for a city',
+  {
+    city: z.string().describe('The city name'),
+  },
+  async ({ city }) => ({
+    content: [{ type: 'text', text: `Weather in ${city}: sunny, 22°C` }],
+  }),
+)
+
+const server = createSdkMcpServer({
+  name: 'my-tools',
+  version: '1.0.0',
+  tools: [getWeather],
+})
+
+for await (const msg of query({
+  prompt: "What's the weather in London?",
+  options: {
+    mcpServers: {
+      'my-tools': server,
+    },
+  },
+})) {
+  console.log(msg)
+}
+```
+
+<Note>
+If your in-process MCP tool calls will run longer than 60 seconds, set the `CLAUDE_CODE_STREAM_CLOSE_TIMEOUT` environment variable to a higher value.
+</Note>
+
+## Error handling
+
+```typescript
+import { query, AbortError } from '@anthropic-ai/claude-code'
+
+const controller = new AbortController()
+
+try {
+  for await (const msg of query({
+    prompt: 'Run the full test suite',
+    options: { abortController: controller },
+  })) {
+    if (shouldCancel()) controller.abort()
+    console.log(msg)
+  }
+} catch (err) {
+  if (err instanceof AbortError) {
+    console.log('Query was aborted')
+  } else {
+    throw err
+  }
+}
+```

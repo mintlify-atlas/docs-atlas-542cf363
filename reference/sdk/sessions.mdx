@@ -1,0 +1,408 @@
+---
+title: "Session Management"
+description: "Create, resume, list, and manipulate Claude Code conversation sessions from the SDK."
+---
+
+Claude Code persists every conversation as a session — a JSONL transcript stored on disk under `~/.claude/projects/`. The session API lets you programmatically create multi-turn conversations, read transcripts, rename or tag sessions, and fork sessions into independent branches.
+
+<Warning>
+The `unstable_v2_*` functions are **alpha APIs**. Their signatures may change in minor or patch releases. Pin to an exact version when using them in production.
+</Warning>
+
+## unstable_v2_createSession()
+
+Creates a new persistent session for multi-turn conversations.
+
+```typescript
+function unstable_v2_createSession(options: SDKSessionOptions): SDKSession
+```
+
+<ParamField path="options" type="SDKSessionOptions" required>
+  Session configuration.
+
+  <Expandable title="SDKSessionOptions fields">
+    <ParamField path="model" type="string">
+      Model ID to use for this session (e.g. `'claude-opus-4-5'`).
+    </ParamField>
+    <ParamField path="cwd" type="string">
+      Working directory for tool execution within the session.
+    </ParamField>
+    <ParamField path="systemPrompt" type="string">
+      Custom system prompt for this session.
+    </ParamField>
+    <ParamField path="appendSystemPrompt" type="string">
+      Text to append to the default system prompt.
+    </ParamField>
+    <ParamField path="allowedTools" type="string[]">
+      Tool allowlist for all turns in this session.
+    </ParamField>
+    <ParamField path="maxTurns" type="number">
+      Maximum turns per prompt call.
+    </ParamField>
+    <ParamField path="permissionMode" type="'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk'">
+      Permission mode controlling how tool executions are handled.
+    </ParamField>
+    <ParamField path="mcpServers" type="Record<string, McpServerConfigForProcessTransport>">
+      MCP server configurations for this session.
+    </ParamField>
+    <ParamField path="sdkMcpServers" type="McpSdkServerConfigWithInstance[]">
+      In-process MCP servers created with `createSdkMcpServer()`.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+Returns an `SDKSession` object with a `prompt()` method for sending turns and a `sessionId` property.
+
+---
+
+## unstable_v2_resumeSession()
+
+Resumes an existing session by its UUID, continuing the conversation from where it left off.
+
+```typescript
+function unstable_v2_resumeSession(
+  sessionId: string,
+  options: SDKSessionOptions,
+): SDKSession
+```
+
+<ParamField path="sessionId" type="string" required>
+  UUID of the session to resume. Obtain session IDs from `listSessions()` or from the `session_id` field in a previous `result` message.
+</ParamField>
+
+<ParamField path="options" type="SDKSessionOptions" required>
+  Session configuration. See `unstable_v2_createSession()` for field details.
+</ParamField>
+
+---
+
+## unstable_v2_prompt()
+
+One-shot convenience function — creates a session, sends a single prompt, awaits the result, and returns the `SDKResultMessage`.
+
+```typescript
+async function unstable_v2_prompt(
+  message: string,
+  options: SDKSessionOptions,
+): Promise<SDKResultMessage>
+```
+
+<ParamField path="message" type="string" required>
+  The user prompt to send.
+</ParamField>
+
+<ParamField path="options" type="SDKSessionOptions" required>
+  Session configuration.
+</ParamField>
+
+**Returns:** `Promise<SDKResultMessage>` — the terminal result message from the agent loop.
+
+```typescript
+const result = await unstable_v2_prompt('What files are here?', {
+  model: 'claude-sonnet-4-6',
+  cwd: '/path/to/project',
+})
+console.log(result.result) // final text response
+```
+
+---
+
+## listSessions()
+
+Lists sessions with metadata. Returns sessions sorted by `lastModified` descending.
+
+```typescript
+async function listSessions(
+  options?: ListSessionsOptions,
+): Promise<SDKSessionInfo[]>
+```
+
+<ParamField path="options" type="ListSessionsOptions">
+  Filtering and pagination options.
+
+  <Expandable title="ListSessionsOptions fields">
+    <ParamField path="dir" type="string">
+      Project directory path. When provided, returns sessions for that project directory and its git worktrees. When omitted, returns sessions across all projects.
+    </ParamField>
+    <ParamField path="limit" type="number">
+      Maximum number of sessions to return.
+    </ParamField>
+    <ParamField path="offset" type="number">
+      Number of sessions to skip from the start of the sorted result set. Use with `limit` for pagination. Defaults to `0`.
+    </ParamField>
+    <ParamField path="includeWorktrees" type="boolean">
+      When `dir` is provided and the directory is inside a git repository, include sessions from all git worktree paths. Defaults to `true`.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+**Returns:** `Promise<SDKSessionInfo[]>`
+
+<ResponseField name="sessionId" type="string">
+  Unique session identifier (UUID).
+</ResponseField>
+
+<ResponseField name="summary" type="string">
+  Display title: custom title, auto-generated summary, or first prompt.
+</ResponseField>
+
+<ResponseField name="lastModified" type="number">
+  Last modified time in milliseconds since epoch.
+</ResponseField>
+
+<ResponseField name="fileSize" type="number">
+  File size in bytes (only populated for local JSONL storage).
+</ResponseField>
+
+<ResponseField name="customTitle" type="string">
+  User-set session title (set via `/rename`).
+</ResponseField>
+
+<ResponseField name="firstPrompt" type="string">
+  First meaningful user prompt in the session.
+</ResponseField>
+
+<ResponseField name="gitBranch" type="string">
+  Git branch at the end of the session.
+</ResponseField>
+
+<ResponseField name="cwd" type="string">
+  Working directory for the session.
+</ResponseField>
+
+<ResponseField name="tag" type="string">
+  User-set session tag.
+</ResponseField>
+
+<ResponseField name="createdAt" type="number">
+  Creation time in milliseconds since epoch.
+</ResponseField>
+
+---
+
+## getSessionInfo()
+
+Reads metadata for a single session without scanning all project sessions. Returns `undefined` if the session is not found, is a sidechain session, or has no extractable summary.
+
+```typescript
+async function getSessionInfo(
+  sessionId: string,
+  options?: GetSessionInfoOptions,
+): Promise<SDKSessionInfo | undefined>
+```
+
+<ParamField path="sessionId" type="string" required>
+  UUID of the session.
+</ParamField>
+
+<ParamField path="options" type="GetSessionInfoOptions">
+  <Expandable title="GetSessionInfoOptions fields">
+    <ParamField path="dir" type="string">
+      Project directory path. When omitted, searches all project directories.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+---
+
+## getSessionMessages()
+
+Reads the conversation messages from a session's JSONL transcript file. Parses the transcript, builds the conversation chain via `parentUuid` links, and returns user/assistant messages in chronological order.
+
+```typescript
+async function getSessionMessages(
+  sessionId: string,
+  options?: GetSessionMessagesOptions,
+): Promise<SessionMessage[]>
+```
+
+<ParamField path="sessionId" type="string" required>
+  UUID of the session to read.
+</ParamField>
+
+<ParamField path="options" type="GetSessionMessagesOptions">
+  <Expandable title="GetSessionMessagesOptions fields">
+    <ParamField path="dir" type="string">
+      Project directory path. When omitted, searches all project directories.
+    </ParamField>
+    <ParamField path="limit" type="number">
+      Maximum number of messages to return.
+    </ParamField>
+    <ParamField path="offset" type="number">
+      Number of messages to skip. Use with `limit` for pagination.
+    </ParamField>
+    <ParamField path="includeSystemMessages" type="boolean">
+      When `true`, system messages (e.g. session initialization) are included in the result.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+**Returns:** `Promise<SessionMessage[]>` — array of messages, or an empty array if the session is not found.
+
+---
+
+## renameSession()
+
+Appends a custom title entry to the session's JSONL file.
+
+```typescript
+async function renameSession(
+  sessionId: string,
+  title: string,
+  options?: SessionMutationOptions,
+): Promise<void>
+```
+
+<ParamField path="sessionId" type="string" required>
+  UUID of the session.
+</ParamField>
+
+<ParamField path="title" type="string" required>
+  New title for the session.
+</ParamField>
+
+<ParamField path="options" type="SessionMutationOptions">
+  <Expandable title="SessionMutationOptions fields">
+    <ParamField path="dir" type="string">
+      Project directory path. When omitted, searches all projects.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+---
+
+## tagSession()
+
+Sets or clears a tag on a session. Pass `null` to clear an existing tag.
+
+```typescript
+async function tagSession(
+  sessionId: string,
+  tag: string | null,
+  options?: SessionMutationOptions,
+): Promise<void>
+```
+
+<ParamField path="sessionId" type="string" required>
+  UUID of the session.
+</ParamField>
+
+<ParamField path="tag" type="string | null" required>
+  Tag string to set, or `null` to clear the tag.
+</ParamField>
+
+<ParamField path="options" type="SessionMutationOptions">
+  See `renameSession()` for field details.
+</ParamField>
+
+---
+
+## forkSession()
+
+Forks a session into a new branch with fresh UUIDs. Copies transcript messages from the source session, remapping every message UUID while preserving the `parentUuid` chain. Supports branching from a specific point in the conversation.
+
+<Note>
+Forked sessions start without undo history — file-history snapshots from the source are not copied.
+</Note>
+
+```typescript
+async function forkSession(
+  sessionId: string,
+  options?: ForkSessionOptions,
+): Promise<ForkSessionResult>
+```
+
+<ParamField path="sessionId" type="string" required>
+  UUID of the source session to fork.
+</ParamField>
+
+<ParamField path="options" type="ForkSessionOptions">
+  <Expandable title="ForkSessionOptions fields">
+    <ParamField path="dir" type="string">
+      Project directory path. When omitted, searches all projects.
+    </ParamField>
+    <ParamField path="upToMessageId" type="string">
+      UUID of the last message to include in the fork. When set, only messages up to and including this message are copied. Use this to branch from a specific point in the conversation.
+    </ParamField>
+    <ParamField path="title" type="string">
+      Title for the new forked session.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+**Returns:** `Promise<ForkSessionResult>`
+
+<ResponseField name="sessionId" type="string">
+  UUID of the newly created forked session.
+</ResponseField>
+
+---
+
+## Complete example
+
+```typescript
+import {
+  unstable_v2_createSession,
+  listSessions,
+  getSessionMessages,
+  renameSession,
+  tagSession,
+  forkSession,
+} from '@anthropic-ai/claude-code'
+
+async function sessionLifecycleDemo() {
+  // 1. Create a persistent session
+  const session = unstable_v2_createSession({
+    model: 'claude-opus-4-5',
+    cwd: '/path/to/project',
+    maxTurns: 10,
+    allowedTools: ['Bash', 'Read'],
+  })
+
+  console.log('Session ID:', session.sessionId)
+
+  // 2. Send a first turn
+  const stream1 = session.prompt('List the top-level files in this directory.')
+  for await (const message of stream1) {
+    if (message.type === 'assistant') {
+      for (const block of message.message.content) {
+        if (block.type === 'text') process.stdout.write(block.text)
+      }
+    }
+  }
+
+  // 3. Send a second turn (conversation continues)
+  const stream2 = session.prompt('Now count how many TypeScript files there are.')
+  for await (const message of stream2) {
+    if (message.type === 'result') {
+      console.log('\nResult:', message.result)
+    }
+  }
+
+  // 4. Rename and tag the session
+  await renameSession(session.sessionId, 'TS file audit')
+  await tagSession(session.sessionId, 'audit')
+
+  // 5. List sessions for this project
+  const sessions = await listSessions({ dir: '/path/to/project', limit: 10 })
+  console.log('Recent sessions:', sessions.map(s => s.summary))
+
+  // 6. Read the conversation transcript
+  const messages = await getSessionMessages(session.sessionId)
+  console.log(`Loaded ${messages.length} messages`)
+
+  // 7. Fork from the first turn to explore a different path
+  const firstTurnMessages = await getSessionMessages(session.sessionId)
+  const firstAssistantMessage = firstTurnMessages.find(m => m.type === 'assistant')
+
+  if (firstAssistantMessage) {
+    const fork = await forkSession(session.sessionId, {
+      upToMessageId: firstAssistantMessage.uuid,
+      title: 'Alternative analysis',
+    })
+    console.log('Forked session ID:', fork.sessionId)
+  }
+}
+
+sessionLifecycleDemo().catch(console.error)
+```

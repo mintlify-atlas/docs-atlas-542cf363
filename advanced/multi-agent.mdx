@@ -1,0 +1,201 @@
+---
+title: "Multi-Agent Tasks"
+description: "Spawn parallel sub-agents to tackle large codebases, run tests, and complete independent workstreams simultaneously."
+---
+
+Claude Code can orchestrate networks of sub-agents — each running independently with their own tool pool, context, and optionally their own isolated git worktree. This enables parallel execution of complex, decomposable tasks.
+
+## How sub-agents work
+
+When Claude decides to delegate work, it invokes the **Agent tool** with a prompt and a short description. Claude Code spins up a new agent process, runs it to completion (or in the background), and returns the result.
+
+```
+Parent agent
+  └─ Agent("Refactor auth module")     ← sub-agent 1
+  └─ Agent("Write tests for API")      ← sub-agent 2 (parallel)
+  └─ Agent("Update documentation")     ← sub-agent 3 (parallel)
+```
+
+Each sub-agent:
+- Has its own conversation context and system prompt
+- Assembles its own tool pool based on its permission mode
+- Can itself spawn further sub-agents (up to the nesting limit)
+
+## Agent tool input schema
+
+The Agent tool accepts the following parameters:
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `description` | `string` | Short (3–5 word) task description shown in the UI |
+| `prompt` | `string` | Full task instructions for the agent |
+| `subagent_type` | `string?` | Specialized agent type (e.g. a custom agent from your `.claude/agents/` directory) |
+| `model` | `"sonnet" \| "opus" \| "haiku"?` | Model override; inherits from parent if omitted |
+| `run_in_background` | `boolean?` | Run asynchronously; returns immediately with an agent ID |
+| `isolation` | `"worktree"?` | Create an isolated git worktree for this agent |
+| `cwd` | `string?` | Absolute working directory for the agent |
+| `name` | `string?` | Addressable name for multi-agent team routing |
+
+## Parallel task execution
+
+Claude automatically runs independent agents in parallel. For tasks with no data dependencies, multiple agents are launched simultaneously and their results are aggregated.
+
+**Example use cases:**
+- Running unit tests for multiple packages at once
+- Refactoring several modules in a large codebase independently
+- Generating documentation for different subsystems in parallel
+- Investigating multiple bug reports simultaneously
+
+The parent agent waits for all parallel sub-agents to complete before proceeding, or reads their output files if they were launched in the background.
+
+## Background agents
+
+Set `run_in_background: true` to launch an agent without blocking the parent turn. The Agent tool returns immediately with an `async_launched` result:
+
+```json
+{
+  "status": "async_launched",
+  "agentId": "agent-abc123",
+  "description": "Run integration tests",
+  "prompt": "Run the full integration test suite and report failures",
+  "outputFile": "/tmp/claude-tasks/agent-abc123.json",
+  "canReadOutputFile": true
+}
+```
+
+The parent can poll the output file using the Read or Bash tools to check progress, or use the `TaskOutput` tool to block until completion.
+
+<Note>
+Background agents survive the parent pressing `Esc`. They continue running and surface results via a task notification when complete.
+</Note>
+
+### Managing running agents
+
+Use the `/tasks` command to see all running and completed background agents. From the tasks dialog you can:
+- View progress and current activity
+- Kill a running agent
+- Promote a background agent to the foreground
+
+You can also set the environment variable `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` to prevent agents from being run in the background entirely.
+
+## Agent isolation with worktrees
+
+Pass `isolation: "worktree"` to give an agent its own isolated copy of the repository:
+
+```
+Agent({
+  description: "Try experimental refactor",
+  prompt: "...",
+  isolation: "worktree"
+})
+```
+
+Claude Code will:
+<Steps>
+  <Step title="Create a git worktree">
+    A temporary branch is created at a slug like `agent-abc12345`, and the worktree is checked out alongside the main working tree.
+  </Step>
+  <Step title="Run the agent in the worktree">
+    All filesystem and shell operations within the agent are scoped to the worktree path.
+  </Step>
+  <Step title="Clean up on completion">
+    If the agent made no changes, the worktree is automatically removed. If changes were made, the worktree is kept so you can inspect, merge, or discard them.
+  </Step>
+</Steps>
+
+<Tip>
+Worktree isolation is ideal for speculative or experimental changes where you want the ability to compare or discard results without affecting the main working tree.
+</Tip>
+
+## Specialized agent types
+
+You can define custom agent types in `.claude/agents/` as Markdown files with YAML frontmatter. Claude will use the appropriate agent based on the task.
+
+```markdown
+---
+name: test-runner
+description: Runs the test suite and reports failures
+model: sonnet
+permissionMode: acceptEdits
+allowedTools:
+  - Bash
+  - Read
+---
+
+You are a specialized test runner agent. Your only job is to run tests
+and report failures clearly.
+```
+
+Reference a custom agent by its name:
+
+```
+Agent({
+  description: "Run tests",
+  prompt: "Run all tests and report any failures",
+  subagent_type: "test-runner"
+})
+```
+
+## Agent output schema
+
+When an agent completes synchronously, the Agent tool returns a `completed` result:
+
+```typescript
+{
+  status: 'completed',
+  agentId: string,
+  agentType?: string,
+  content: Array<{ type: 'text'; text: string }>,
+  totalToolUseCount: number,
+  totalDurationMs: number,
+  totalTokens: number,
+  usage: {
+    input_tokens: number,
+    output_tokens: number,
+    cache_creation_input_tokens: number | null,
+    cache_read_input_tokens: number | null,
+    service_tier: 'standard' | 'priority' | 'batch' | null,
+  },
+  prompt: string,
+}
+```
+
+## Multi-agent teams
+
+<Note>
+Agent teams (swarm mode) require a plan that includes multi-agent access.
+</Note>
+
+In team mode, named agents can communicate via `SendMessage`. Spawn a teammate with a `name` and `team_name`:
+
+```
+Agent({
+  description: "Frontend specialist",
+  prompt: "You handle all React and CSS changes",
+  name: "frontend",
+  team_name: "webapp-team"
+})
+```
+
+Other teammates can then route messages to `"frontend"` using `SendMessage({ to: "frontend" })`.
+
+<Warning>
+Teammates cannot spawn other teammates — the team roster is flat. To spawn a sub-agent from within a teammate, omit the `name` parameter.
+</Warning>
+
+## Use cases
+
+<CardGroup cols={2}>
+  <Card title="Large codebase refactoring" icon="code">
+    Decompose a large refactor into per-module sub-tasks. Each agent handles one module in its own worktree, and the parent merges the results.
+  </Card>
+  <Card title="Parallel test runs" icon="vial">
+    Spawn one agent per test suite. All suites run simultaneously and report back — dramatically faster than sequential execution.
+  </Card>
+  <Card title="Research and implementation" icon="magnifying-glass">
+    One agent researches the codebase and produces a plan; a second agent implements while a third writes tests — all in parallel.
+  </Card>
+  <Card title="CI triage" icon="triangle-exclamation">
+    Launch one agent per failing test or lint error. Each agent fixes its assigned issue in an isolated worktree and opens a diff.
+  </Card>
+</CardGroup>

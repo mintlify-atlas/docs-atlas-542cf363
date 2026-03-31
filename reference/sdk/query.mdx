@@ -1,0 +1,274 @@
+---
+title: "query()"
+description: "Stream a prompt through Claude Code's full agent loop and receive messages as they are generated."
+---
+
+`query()` is the primary entry point for running Claude Code programmatically. It accepts a prompt (or a stream of user messages), runs the agent loop, and returns an `AsyncIterable` of typed SDK messages you can process as they arrive.
+
+## Signature
+
+```typescript
+function query(params: {
+  prompt: string | AsyncIterable<SDKUserMessage>
+  options?: Options
+}): Query
+```
+
+`Query` is an `AsyncIterable<SDKMessage>` — iterate it with `for await` to receive messages in real time.
+
+## Parameters
+
+<ParamField path="prompt" type="string | AsyncIterable<SDKUserMessage>" required>
+  The user prompt to send to Claude. Pass a plain `string` for a single prompt, or an `AsyncIterable<SDKUserMessage>` to stream multiple user turns (useful for multi-turn pipelines driven externally).
+</ParamField>
+
+<ParamField path="options" type="Options">
+  Configuration for the agent run. All fields are optional.
+
+  <Expandable title="Options fields">
+    <ParamField path="model" type="string">
+      Model ID to use (e.g. `'claude-opus-4-5'`, `'claude-sonnet-4-6'`). Defaults to the CLI's configured default model.
+    </ParamField>
+
+    <ParamField path="cwd" type="string">
+      Working directory for the agent. All file operations are resolved relative to this path. Defaults to `process.cwd()`.
+    </ParamField>
+
+    <ParamField path="systemPrompt" type="string">
+      Custom system prompt that replaces the default Claude Code system prompt entirely.
+    </ParamField>
+
+    <ParamField path="appendSystemPrompt" type="string">
+      Text appended to the end of the default system prompt. Use this to add instructions without losing the default Claude Code system prompt.
+    </ParamField>
+
+    <ParamField path="allowedTools" type="string[]">
+      Allowlist of tool names the agent may use. When set, only listed tools are available. Example: `['Bash', 'Read', 'Edit']`.
+    </ParamField>
+
+    <ParamField path="maxTurns" type="number">
+      Maximum number of agentic turns (API round-trips) before the agent stops. Prevents runaway loops in automation.
+    </ParamField>
+
+    <ParamField path="maxBudgetUsd" type="number">
+      Hard dollar cap on API spend for this query. The agent stops and returns a `result` message with `subtype: 'error_max_budget_usd'` if the limit is exceeded.
+    </ParamField>
+
+    <ParamField path="permissionMode" type="'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk'">
+      Controls how tool permission prompts are handled:
+      - `'default'` — prompts for dangerous operations (default behavior).
+      - `'acceptEdits'` — auto-accepts file edit operations without prompting.
+      - `'bypassPermissions'` — bypasses all permission checks (requires `allowDangerouslySkipPermissions` in settings).
+      - `'plan'` — planning mode; tools are described but not executed.
+      - `'dontAsk'` — never prompts; denies any tool not already pre-approved.
+    </ParamField>
+
+    <ParamField path="thinkingConfig" type="ThinkingConfig">
+      Controls Claude's extended thinking behavior.
+
+      <Expandable title="ThinkingConfig variants">
+        <ParamField path="type" type="'adaptive' | 'enabled' | 'disabled'" required>
+          - `'adaptive'` — Claude decides when and how much to think (Opus 4.6+).
+          - `'enabled'` — fixed thinking token budget.
+          - `'disabled'` — no extended thinking.
+        </ParamField>
+        <ParamField path="budgetTokens" type="number">
+          Token budget when `type` is `'enabled'`.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+
+    <ParamField path="outputFormat" type="string">
+      Output format for the agent's final response. Use `'stream-json'` for newline-delimited JSON compatible with the CLI's `--output-format stream-json` flag.
+    </ParamField>
+
+    <ParamField path="jsonSchema" type="Record<string, unknown>">
+      JSON Schema for structured output. When provided, the agent returns a structured response conforming to the schema.
+    </ParamField>
+
+    <ParamField path="mcpServers" type="Record<string, McpServerConfigForProcessTransport>">
+      Additional MCP server configurations to register for this query. Supports `stdio`, `sse`, `http`, and `sdk` transport types.
+    </ParamField>
+
+    <ParamField path="sdkMcpServers" type="McpSdkServerConfigWithInstance[]">
+      In-process MCP servers created with [`createSdkMcpServer()`](/reference/sdk/tool). These run in the same process without any subprocess or transport overhead.
+    </ParamField>
+
+    <ParamField path="verbose" type="boolean">
+      When `true`, emits additional diagnostic messages in the stream.
+    </ParamField>
+
+    <ParamField path="fallbackModel" type="string">
+      Fallback model to use if the primary model is unavailable or rate-limited.
+    </ParamField>
+
+    <ParamField path="resume" type="string | boolean">
+      Session ID to resume, or `true` to resume the most recent session.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Return type
+
+`query()` returns a `Query`, which is an `AsyncIterable<SDKMessage>`. Each yielded value is a discriminated union on `type`:
+
+<ResponseField name="type" type="string">
+  Message type. Key variants:
+
+  - `'system'` — session initialization, status, compaction boundaries, and other lifecycle events.
+  - `'assistant'` — a model response (text, tool use, thinking blocks).
+  - `'user'` — a user turn (echoed back in the stream).
+  - `'result'` — the terminal message emitted when the agent loop ends.
+  - `'stream_event'` — raw streaming events from the model.
+  - `'tool_progress'` — progress notification from a long-running tool.
+  - `'rate_limit_event'` — rate limit status change.
+</ResponseField>
+
+### Result message
+
+The final message in the stream always has `type: 'result'`. It has a `subtype` field:
+
+<ResponseField name="subtype" type="'success' | 'error_during_execution' | 'error_max_turns' | 'error_max_budget_usd' | 'error_max_structured_output_retries'">
+  Outcome of the agent run.
+</ResponseField>
+
+<ResponseField name="result" type="string">
+  The final text response from Claude (only present when `subtype` is `'success'`).
+</ResponseField>
+
+<ResponseField name="is_error" type="boolean">
+  Whether the run ended in an error state.
+</ResponseField>
+
+<ResponseField name="num_turns" type="number">
+  Number of agentic turns taken.
+</ResponseField>
+
+<ResponseField name="total_cost_usd" type="number">
+  Total API cost in US dollars.
+</ResponseField>
+
+<ResponseField name="duration_ms" type="number">
+  Wall-clock duration of the entire run in milliseconds.
+</ResponseField>
+
+<ResponseField name="session_id" type="string">
+  Session ID for this run, usable with [`resumeSession()`](/reference/sdk/sessions) or [`getSessionMessages()`](/reference/sdk/sessions).
+</ResponseField>
+
+## Non-interactive / print mode
+
+`query()` is the SDK equivalent of running `claude -p "..."` on the command line. No interactive TTY is required — output is delivered as structured messages over the async iterator rather than being rendered to a terminal.
+
+<Tip>
+Set `maxTurns` to limit how many API round-trips the agent makes. Without a limit, the agent continues until it decides it is done or hits a context limit.
+</Tip>
+
+## Complete example
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    import { query } from '@anthropic-ai/claude-code'
+
+    async function analyzeProject(projectPath: string): Promise<string> {
+      let finalResult = ''
+
+      const stream = query({
+        prompt: 'Analyze this codebase and summarize the main architectural patterns.',
+        options: {
+          cwd: projectPath,
+          model: 'claude-opus-4-5',
+          maxTurns: 10,
+          allowedTools: ['Bash', 'Read', 'Glob', 'Grep'],
+          permissionMode: 'acceptEdits',
+          appendSystemPrompt: 'Focus on TypeScript patterns. Be concise.',
+        },
+      })
+
+      for await (const message of stream) {
+        // Print assistant text as it streams
+        if (message.type === 'assistant') {
+          for (const block of message.message.content) {
+            if (block.type === 'text') {
+              process.stdout.write(block.text)
+            }
+          }
+        }
+
+        // Capture the final result
+        if (message.type === 'result' && message.subtype === 'success') {
+          finalResult = message.result
+          console.log(`\n\nCompleted in ${message.num_turns} turns, cost: $${message.total_cost_usd.toFixed(4)}`)
+        }
+
+        // Handle errors
+        if (message.type === 'result' && message.subtype !== 'success') {
+          throw new Error(`Agent failed: ${message.subtype}`)
+        }
+      }
+
+      return finalResult
+    }
+
+    analyzeProject('/path/to/my/project').catch(console.error)
+    ```
+  </Tab>
+  <Tab title="JavaScript">
+    ```javascript
+    import { query } from '@anthropic-ai/claude-code'
+
+    async function analyzeProject(projectPath) {
+      let finalResult = ''
+
+      const stream = query({
+        prompt: 'Analyze this codebase and summarize the main architectural patterns.',
+        options: {
+          cwd: projectPath,
+          model: 'claude-opus-4-5',
+          maxTurns: 10,
+          allowedTools: ['Bash', 'Read', 'Glob', 'Grep'],
+          permissionMode: 'acceptEdits',
+        },
+      })
+
+      for await (const message of stream) {
+        if (message.type === 'result' && message.subtype === 'success') {
+          finalResult = message.result
+        }
+      }
+
+      return finalResult
+    }
+
+    analyzeProject('/path/to/my/project').catch(console.error)
+    ```
+  </Tab>
+</Tabs>
+
+## Streaming user messages
+
+For multi-turn scenarios where the user input arrives asynchronously (e.g. from a WebSocket), pass an `AsyncIterable<SDKUserMessage>` as `prompt`:
+
+```typescript
+import { query } from '@anthropic-ai/claude-code'
+import type { SDKUserMessage } from '@anthropic-ai/claude-code'
+
+async function* userMessageStream(): AsyncIterable<SDKUserMessage> {
+  yield {
+    type: 'user',
+    message: { role: 'user', content: 'Hello! What files are in the current directory?' },
+    parent_tool_use_id: null,
+  }
+  // Additional user messages can be yielded here as they arrive
+}
+
+const stream = query({
+  prompt: userMessageStream(),
+  options: { cwd: '/path/to/project', model: 'claude-opus-4-5' },
+})
+
+for await (const message of stream) {
+  // process messages...
+}
+```

@@ -1,0 +1,281 @@
+---
+title: "Slash Commands"
+description: "Complete reference for all slash commands available in Claude Code's interactive REPL."
+---
+
+Slash commands are entered directly in the REPL prompt and control Claude Code's behavior. Type `/` followed by the command name to invoke them.
+
+```
+> /help
+```
+
+Use `/help` to show all available commands in the current session.
+
+## Command reference
+
+### Context and memory
+
+| Command | Description |
+|---|---|
+| `/memory` | Open a dialog to edit Claude memory files (`CLAUDE.md`, `CLAUDE.local.md`, `~/.claude/CLAUDE.md`) |
+| `/add-dir [path]` | Add an additional working directory to the current session |
+| `/context` | Visualize current context window usage as a colored grid |
+| `/compact [instructions]` | Summarize the conversation and replace it with the summary, freeing context space |
+| `/clear` | Clear the entire conversation history and start a fresh session |
+| `/init` | Analyze the current codebase and create or improve `CLAUDE.md` |
+
+### Planning and workflow
+
+| Command | Description |
+|---|---|
+| `/plan [description]` | Enable plan mode (read-only), or view/manage the current plan |
+| `/plan open` | Open the current plan file in your configured editor |
+| `/review` | Review recent changes (shows a diff-based review) |
+
+### Navigation and sessions
+
+| Command | Description |
+|---|---|
+| `/resume [id-or-title]` | Resume a previous conversation from history |
+| `/rename [name]` | Rename the current conversation |
+| `/export [filename]` | Export the current conversation to a file or clipboard |
+| `/session` | Show the remote session URL and QR code (remote mode only) |
+
+### Configuration
+
+| Command | Description |
+|---|---|
+| `/model [model-name]` | Open the model picker, or set the model directly by name |
+| `/config` | Open the configuration panel (alias: `/settings`) |
+| `/mcp [enable\|disable [server]]` | Manage MCP server connections |
+| `/permissions` | Manage tool permission allow and deny rules (alias: `/allowed-tools`) |
+| `/hooks` | View hook configurations for tool events |
+
+### Information and diagnostics
+
+| Command | Description |
+|---|---|
+| `/cost` | Show total API cost and duration for the current session |
+| `/diff` | View uncommitted changes and per-turn diffs |
+| `/help` | Show available commands and keyboard shortcuts |
+| `/feedback [report]` | Submit feedback about Claude Code (alias: `/bug`) |
+| `/doctor` | Run diagnostics on your Claude Code installation |
+
+### Utilities
+
+| Command | Description |
+|---|---|
+| `/exit` | Exit the REPL (alias: `/quit`) |
+
+---
+
+## Key commands in depth
+
+### /plan
+
+`/plan` enables plan mode, which restricts Claude to read-only operations. Claude can analyze code and produce a written plan but cannot modify files or run commands.
+
+```
+> /plan
+Enabled plan mode
+
+> /plan Refactor the auth module to use JWT tokens
+Enabled plan mode
+```
+
+If you are already in plan mode, `/plan` displays the current plan:
+
+```
+> /plan
+Current Plan
+.claude/plan-auth-refactor.md
+
+1. Update AuthService to accept JWT tokens
+2. Replace session-based middleware with JWT verification
+...
+
+"/plan open" to edit this plan in VS Code
+```
+
+Run `/plan open` to edit the plan in your configured editor before approving it.
+
+<Note>Providing a description after `/plan` (for example, `/plan refactor the auth module`) enables plan mode and immediately sends the description to Claude as the first message, so Claude starts writing the plan right away.</Note>
+
+### /compact
+
+`/compact` compresses the current conversation into a summary, replacing the full message history. This frees context window space while preserving the key information Claude needs to continue.
+
+```
+> /compact
+```
+
+You can pass custom summarization instructions to control what the summary emphasizes:
+
+```
+> /compact focus on the database schema changes we made
+```
+
+<Tip>Run `/compact` before starting a large task if your conversation already contains significant history. Claude's summary retains the important decisions and context from earlier in the session.</Tip>
+
+### /memory
+
+`/memory` opens an interactive file selector for editing Claude's memory files. Select a file to open it in your configured editor (`$VISUAL` or `$EDITOR`).
+
+```
+> /memory
+```
+
+The available memory files include:
+
+- `~/.claude/CLAUDE.md` — your global personal instructions
+- `CLAUDE.md` — project-level instructions checked into source control
+- `CLAUDE.local.md` — your private project-specific instructions (gitignored)
+
+Changes take effect in the next session or the next time context is reloaded.
+
+### /clear
+
+`/clear` clears the entire conversation history, resets the session state, and starts a fresh session. Background tasks are preserved.
+
+```
+> /clear
+```
+
+Aliases: `/reset`, `/new`
+
+<Warning>`/clear` is not the same as `/compact`. `/clear` discards the full conversation. `/compact` replaces it with a summary so Claude retains context.</Warning>
+
+### /diff
+
+`/diff` opens a visual diff dialog showing uncommitted changes in your working directory, organized by each turn of the conversation where changes were made.
+
+```
+> /diff
+```
+
+### /model
+
+`/model` opens an interactive model picker. You can also set the model directly:
+
+```
+> /model claude-sonnet-4-5
+Set model to claude-sonnet-4-5
+```
+
+Run `/model` with no arguments to open the interactive picker and browse available models. Run `/model default` to reset to the default model.
+
+### /mcp
+
+`/mcp` opens the MCP (Model Context Protocol) server management panel.
+
+```
+> /mcp
+> /mcp enable filesystem
+> /mcp disable all
+> /mcp reconnect filesystem
+```
+
+Sub-commands:
+- `/mcp enable [server-name|all]` — enable one or all MCP servers
+- `/mcp disable [server-name|all]` — disable one or all MCP servers
+- `/mcp reconnect <server-name>` — reconnect a specific server
+
+### /add-dir
+
+`/add-dir` adds an additional directory to the session's working directories. Claude can then read from and write to that directory.
+
+```
+> /add-dir /path/to/other/repo
+Added /path/to/other/repo as a working directory for this session
+
+> /add-dir
+```
+
+Run without arguments to show an interactive form for selecting a directory. The permission is session-scoped by default; you can choose to save it to local settings to persist across sessions.
+
+### /resume
+
+`/resume` shows a list of previous conversations you can resume. Sessions are filtered to those associated with the current repository.
+
+```
+> /resume
+```
+
+You can also resume directly by session ID or custom title:
+
+```
+> /resume a1b2c3d4-...
+> /resume "oauth refactor"
+```
+
+### /export
+
+`/export` saves the current conversation to a file or copies it to the clipboard.
+
+```
+> /export
+> /export my-session.md
+```
+
+### /rename
+
+`/rename` sets a custom title for the current conversation, making it easier to find with `/resume`.
+
+```
+> /rename oauth-refactor-session
+```
+
+### /cost
+
+`/cost` reports total API cost and session duration.
+
+```
+> /cost
+Total cost: $0.42 · Duration: 14m 32s
+```
+
+For Claude.ai subscribers, `/cost` shows subscription usage status instead of a dollar amount.
+
+### /context
+
+`/context` renders a colored grid showing how the context window is currently allocated — system prompt, memory files, conversation history, and tool results.
+
+```
+> /context
+```
+
+### /permissions
+
+`/permissions` opens the tool permissions manager where you can add allow and deny rules for specific tools or tool patterns.
+
+```
+> /permissions
+```
+
+Alias: `/allowed-tools`
+
+### /hooks
+
+`/hooks` shows the currently configured hooks — shell commands that run automatically on tool events like file edits or bash executions.
+
+```
+> /hooks
+```
+
+### /config
+
+`/config` opens the configuration panel for adjusting settings like output style, theme, and other preferences.
+
+```
+> /config
+```
+
+Alias: `/settings`
+
+### /help
+
+`/help` displays all available commands and their descriptions.
+
+```
+> /help
+```

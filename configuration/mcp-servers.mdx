@@ -1,0 +1,212 @@
+---
+title: "MCP Servers"
+description: "Extend Claude Code with Model Context Protocol servers that add new tools, resources, and capabilities."
+---
+
+Model Context Protocol (MCP) is an open standard that lets Claude Code connect to external servers that expose additional tools and data sources. An MCP server might give Claude access to a database, a SaaS API, a code execution environment, or any other capability you want to add to your workflow.
+
+## Adding MCP servers
+
+Use the `claude mcp add` CLI subcommand to register a server. The server name, command (or URL), and scope are required.
+
+### Stdio servers (local process)
+
+Stdio servers run as a local subprocess. Claude Code spawns the process and communicates over stdin/stdout.
+
+```bash
+# Basic stdio server
+claude mcp add my-server -- npx my-mcp-server
+
+# With environment variables
+claude mcp add -e API_KEY=xxx my-server -- npx my-mcp-server
+
+# With explicit subprocess flags
+claude mcp add my-server -- my-command --some-flag arg1
+```
+
+### HTTP servers (remote)
+
+HTTP servers are reachable over the network. Pass `--transport http` and a URL.
+
+```bash
+# Add an HTTP server
+claude mcp add --transport http sentry https://mcp.sentry.dev/mcp
+
+# With custom headers (e.g. bearer token)
+claude mcp add --transport http corridor https://app.corridor.dev/api/mcp \
+  --header "Authorization: Bearer YOUR_TOKEN"
+```
+
+### SSE servers
+
+Server-Sent Events (SSE) transport is also supported for streaming servers:
+
+```bash
+claude mcp add --transport sse my-sse-server https://example.com/sse
+```
+
+<Warning>
+  If the command argument looks like a URL but `--transport` is not specified, Claude Code defaults to stdio and warns you. Always pass `--transport http` or `--transport sse` when adding a remote server.
+</Warning>
+
+## Server scope
+
+Every server is registered at a specific scope that determines which settings file stores it and who can use it.
+
+<ParamField path="--scope local" type="default">
+  Stored in `.claude/settings.local.json` in the current project directory. Applies only to this machine and this project. Gitignored. **This is the default.**
+</ParamField>
+
+<ParamField path="--scope user">
+  Stored in `~/.claude/settings.json`. Available in all projects on this machine.
+</ParamField>
+
+<ParamField path="--scope project">
+  Stored in `.claude/settings.json` in the current project directory. Committed to version control — all teammates who check out the project get this server.
+</ParamField>
+
+```bash
+# Add to user scope (available everywhere on this machine)
+claude mcp add --scope user my-server -- npx my-mcp-server
+
+# Add to project scope (committed to version control)
+claude mcp add --scope project my-server -- npx my-mcp-server
+```
+
+## Managing servers
+
+<Tabs>
+  <Tab title="/mcp command">
+    Inside a Claude Code session, run `/mcp` to open the interactive MCP server manager. From there you can view connection status, enable/disable servers, and reconnect.
+
+    ```bash
+    /mcp
+    ```
+  </Tab>
+  <Tab title="CLI subcommands">
+    ```bash
+    # List all configured servers
+    claude mcp list
+
+    # Remove a server
+    claude mcp remove my-server
+
+    # Enable/disable a server (session-level toggle)
+    /mcp enable my-server
+    /mcp disable my-server
+    /mcp disable all
+    ```
+  </Tab>
+  <Tab title="Reconnect">
+    If a server loses its connection, reconnect it without restarting the session:
+
+    ```bash
+    /mcp reconnect my-server
+    ```
+  </Tab>
+</Tabs>
+
+## OAuth authentication
+
+HTTP and SSE servers that require OAuth can be configured with a client ID and secret:
+
+```bash
+claude mcp add --transport http \
+  --client-id YOUR_CLIENT_ID \
+  --client-secret \
+  my-oauth-server https://api.example.com/mcp
+```
+
+The `--client-secret` flag prompts for the secret interactively (or reads from the `MCP_CLIENT_SECRET` environment variable). Secrets are stored in the system keychain, not in settings files.
+
+Use `--callback-port` if the authorization server requires a pre-registered redirect URI:
+
+```bash
+claude mcp add --transport http \
+  --client-id YOUR_CLIENT_ID \
+  --client-secret \
+  --callback-port 8085 \
+  my-server https://api.example.com/mcp
+```
+
+## Using MCP tools in conversations
+
+Once connected, MCP tools appear automatically alongside built-in tools. Reference them naturally in your conversation:
+
+> "Use the database tool to look up orders placed in the last 7 days."
+
+Claude selects the appropriate MCP tool and asks for permission (subject to your [permissions configuration](/configuration/permissions)) before calling it.
+
+## Enterprise MCP controls
+
+Organizations can restrict which MCP servers users may configure:
+
+<ParamField path="allowedMcpServers" type="object[]">
+  Allowlist of servers that may be used. Each entry matches by `serverName`, `serverCommand`, or `serverUrl`. If undefined, all servers are allowed. An empty array blocks all servers.
+
+  ```json
+  {
+    "allowedMcpServers": [
+      { "serverName": "sentry" },
+      { "serverUrl": "https://*.internal.example.com/*" }
+    ]
+  }
+  ```
+</ParamField>
+
+<ParamField path="deniedMcpServers" type="object[]">
+  Denylist of servers that are explicitly blocked. Takes precedence over `allowedMcpServers`.
+
+  ```json
+  {
+    "deniedMcpServers": [
+      { "serverCommand": ["npx", "untrusted-server"] }
+    ]
+  }
+  ```
+</ParamField>
+
+<ParamField path="allowManagedMcpServersOnly" type="boolean">
+  When `true` (set in managed settings), the `allowedMcpServers` allowlist is only read from managed settings. Users can still add their own servers, but only the admin-defined allowlist governs which are permitted.
+</ParamField>
+
+## Example MCP servers
+
+<CardGroup cols={2}>
+  <Card title="Sentry" icon="bug">
+    Connect to Sentry to query issues, releases, and performance data directly from your workflow.
+
+    ```bash
+    claude mcp add --transport http sentry \
+      https://mcp.sentry.dev/mcp
+    ```
+  </Card>
+  <Card title="GitHub" icon="github">
+    Interact with GitHub repositories, pull requests, and issues using the official MCP server.
+
+    ```bash
+    claude mcp add --scope user github \
+      -- npx @modelcontextprotocol/server-github
+    ```
+  </Card>
+  <Card title="PostgreSQL" icon="database">
+    Give Claude read access to a PostgreSQL database for querying and schema inspection.
+
+    ```bash
+    claude mcp add -e DB_URL=postgres://... pg-server \
+      -- npx @modelcontextprotocol/server-postgres
+    ```
+  </Card>
+  <Card title="Filesystem" icon="folder">
+    Extend the directories Claude can read beyond the project root.
+
+    ```bash
+    claude mcp add --scope user filesystem \
+      -- npx @modelcontextprotocol/server-filesystem /data
+    ```
+  </Card>
+</CardGroup>
+
+<Tip>
+  Browse the [MCP server registry](https://modelcontextprotocol.io/servers) for community-maintained servers covering hundreds of tools and APIs.
+</Tip>

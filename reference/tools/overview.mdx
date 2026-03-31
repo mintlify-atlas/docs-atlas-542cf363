@@ -1,0 +1,65 @@
+---
+title: "Tools Overview"
+description: "The built-in capabilities Claude Code uses to interact with your codebase, filesystem, and the web."
+---
+
+Claude Code operates by invoking a set of built-in tools to read files, execute commands, search for content, and fetch information from the web. Understanding which tools are available—and how Claude decides to use them—helps you work more effectively and configure permissions appropriately.
+
+## Built-in tools
+
+| Tool | Name | Category | Description |
+|------|------|----------|-------------|
+| **Read** | `Read` | File | Read files from the filesystem, including text, images, PDFs, and notebooks |
+| **Edit** | `Edit` | File | Perform exact string replacements in existing files |
+| **Write** | `Write` | File | Create new files or completely overwrite existing ones |
+| **Glob** | `Glob` | File | Find files by name pattern using glob syntax |
+| **Grep** | `Grep` | File | Search file contents using regular expressions (powered by ripgrep) |
+| **Bash** | `Bash` | Shell | Execute shell commands in a persistent working directory |
+| **WebFetch** | `WebFetch` | Web | Fetch and extract content from a URL |
+| **WebSearch** | `WebSearch` | Web | Search the web for up-to-date information |
+| **MCP** | varies | MCP | Invoke tools provided by connected MCP servers |
+| **ListMcpResources** | `ListMcpResourcesTool` | MCP | List resources available from connected MCP servers |
+| **ReadMcpResource** | `ReadMcpResourceTool` | MCP | Read a specific resource from an MCP server by URI |
+
+## How Claude decides which tools to use
+
+Claude selects tools based on what is most appropriate for the task at hand. General heuristics:
+
+- **File operations** — Claude prefers `Read`, `Edit`, `Write`, `Glob`, and `Grep` over running equivalent shell commands (`cat`, `grep`, `find`). The dedicated tools provide better permission granularity and a clearer audit trail.
+- **Search tasks** — `Grep` is preferred for content search; `Glob` is preferred for finding files by name. `Bash` with `grep` or `find` is only used as a fallback when the dedicated tools cannot accomplish the task.
+- **Shell commands** — `Bash` is used for running build tools, tests, git operations, package managers, and any command that doesn't have a dedicated tool.
+- **Web access** — `WebFetch` is used to retrieve a specific URL; `WebSearch` is used when Claude needs to discover current information without a known URL.
+- **MCP tools** — When MCP servers are connected, Claude may invoke their tools for domain-specific tasks such as database queries, authenticated API calls, or custom integrations.
+
+## How permissions work
+
+Each tool call is subject to Claude Code's permission system before it executes.
+
+**Read-only tools** (`Read`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `ListMcpResources`, `ReadMcpResource`) are considered safe by default and typically do not require a confirmation prompt.
+
+**Write tools** (`Edit`, `Write`) and **shell execution** (`Bash`) require permission. Claude Code will prompt you to allow or deny the operation. You can grant permanent permissions per-directory or per-command pattern in your settings.
+
+<Note>
+The `Bash` tool supports a `dangerouslyDisableSandbox` parameter that bypasses sandbox restrictions. This should only be used when a command is failing due to sandbox constraints—not as a default.
+</Note>
+
+**MCP tools** use a passthrough permission model and will ask for your consent before executing.
+
+For detailed permission configuration, see the [Permissions](/configuration/permissions) documentation.
+
+## Tool reference pages
+
+<CardGroup cols={2}>
+  <Card title="File Tools" icon="file" href="/reference/tools/file-tools">
+    Read, Edit, Write, Glob, and Grep — everything Claude uses to work with files.
+  </Card>
+  <Card title="Bash Tool" icon="terminal" href="/reference/tools/bash">
+    Execute shell commands, manage background tasks, and configure sandbox mode.
+  </Card>
+  <Card title="Web Tools" icon="globe" href="/reference/tools/web-tools">
+    WebFetch and WebSearch for retrieving and searching web content.
+  </Card>
+  <Card title="MCP Tool" icon="plug" href="/reference/tools/mcp">
+    Invoke tools and read resources from connected MCP servers.
+  </Card>
+</CardGroup>

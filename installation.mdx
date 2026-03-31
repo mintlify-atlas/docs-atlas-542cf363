@@ -1,0 +1,185 @@
+---
+title: "Installation"
+description: "Install Claude Code on macOS, Linux, or Windows and configure it for first use."
+---
+
+## Requirements
+
+- **Node.js 18 or later** — Claude Code's package requires `node >= 18.0.0`. Check your version:
+
+  ```bash
+  node --version
+  ```
+
+- An **Anthropic account** — required for authentication. Sign up at [claude.ai](https://claude.ai).
+
+## Install Claude Code
+
+<CodeGroup>
+
+```bash npm
+npm install -g @anthropic-ai/claude-code
+```
+
+```bash yarn
+yarn global add @anthropic-ai/claude-code
+```
+
+```bash pnpm
+pnpm add -g @anthropic-ai/claude-code
+```
+
+</CodeGroup>
+
+This installs the `claude` binary globally so it is available from any directory.
+
+### Verify the installation
+
+```bash
+claude --version
+```
+
+You should see output like:
+
+```
+2.1.88 (Claude Code)
+```
+
+## First-time setup and authentication
+
+The first time you run `claude`, it walks you through authentication:
+
+```bash
+claude
+```
+
+Claude Code opens a browser window and prompts you to sign in with your Anthropic account. After you authorize the app, your credentials are stored locally and the interactive session starts.
+
+<Note>
+  Claude Code stores authentication tokens in your system keychain (macOS) or in a secured local file (Linux, Windows). You will not need to re-authenticate on subsequent runs.
+</Note>
+
+## Update Claude Code
+
+To update to the latest version, run the built-in install command from inside Claude Code:
+
+```
+> /install
+```
+
+Or reinstall using your package manager:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+## Platform notes
+
+### macOS
+
+Claude Code is supported on both Apple Silicon (arm64) and Intel (x64) Macs. No platform-specific steps are required beyond the standard npm install.
+
+If you installed Node.js via Homebrew, the global npm bin directory (`$(npm bin -g)`) is typically already on your `PATH`.
+
+### Linux
+
+Claude Code runs on x64, arm64, and arm (32-bit) Linux. It is tested on Debian/Ubuntu, Fedora/RHEL, Alpine, and Arch-based distributions.
+
+After a global npm install, add the npm global bin directory to your shell's `PATH` if it is not already there. For bash:
+
+```bash
+echo 'export PATH="$(npm bin -g):$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+For zsh:
+
+```bash
+echo 'export PATH="$(npm bin -g):$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+### Windows
+
+Claude Code is supported on Windows (x64 and arm64). The `claude` binary is installed to `%APPDATA%\npm` by default. Ensure this path is in your `PATH` environment variable.
+
+Claude Code installs its native binary to `%USERPROFILE%\.local\bin\claude.exe` on Windows.
+
+<Tip>
+  On Windows, using **Windows Terminal** or **PowerShell 7+** gives the best experience with Claude Code's terminal UI.
+</Tip>
+
+### WSL (Windows Subsystem for Linux)
+
+Claude Code works inside WSL environments. Install it within your WSL distribution using the Linux instructions above. The `claude` binary will be available in your WSL shell.
+
+## Alternative install methods
+
+### Native installer
+
+Claude Code also supports a native installation that does not require npm. Run this inside an existing Claude Code session:
+
+```
+> /install
+```
+
+The `/install` command downloads and installs the native Claude Code binary for your platform.
+
+### mise or asdf
+
+Claude Code can be managed with [mise](https://mise.jdx.dev) or [asdf](https://asdf-vm.com) as a Node.js global tool. Install Node.js 18+ via mise/asdf first, then use npm to install Claude Code globally.
+
+## Troubleshooting
+
+### `claude: command not found` after install
+
+The global npm bin directory is not on your `PATH`. Find it and add it:
+
+```bash
+npm bin -g
+```
+
+Add the output path to your shell configuration file (`~/.bashrc`, `~/.zshrc`, etc.) using the `PATH` export shown in the Linux section above, then reload your shell.
+
+### Permission errors during install
+
+Avoid running `npm install -g` with `sudo`. Instead, configure npm to use a directory you own:
+
+```bash
+mkdir -p ~/.npm-global
+npm config set prefix '~/.npm-global'
+export PATH="$HOME/.npm-global/bin:$PATH"
+npm install -g @anthropic-ai/claude-code
+```
+
+### Another process is installing Claude
+
+If you see `Could not install - another process is currently installing Claude`, wait a moment and try again. If the error persists, use the `--force` flag:
+
+```bash
+claude install --force
+```
+
+### Node.js version is too old
+
+Claude Code requires Node.js 18 or later. Check your version with `node --version`. If you need to upgrade, use [nvm](https://github.com/nvm-sh/nvm), [mise](https://mise.jdx.dev), or your system package manager.
+
+```bash
+# Using nvm
+nvm install 20
+nvm use 20
+```
+
+### Authentication issues
+
+If authentication fails or you need to re-authenticate, run:
+
+```bash
+claude
+```
+
+Claude Code will detect that your session is expired or missing and prompt you to log in again.
+
+<Warning>
+  Do not share your authentication tokens or commit them to source control. Claude Code stores credentials in your system keychain or a local secured file, not in your project directory.
+</Warning>

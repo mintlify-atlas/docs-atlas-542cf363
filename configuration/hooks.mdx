@@ -1,0 +1,368 @@
+---
+title: "Hooks"
+description: "Run custom scripts before or after Claude Code tool executions to automate linting, testing, logging, and more."
+---
+
+Hooks let you attach scripts to specific points in Claude Code's tool-use lifecycle. A hook can run a shell command, call an HTTP endpoint, evaluate a prompt with an LLM, or run a background agent — all triggered automatically without interrupting Claude's workflow.
+
+## How hooks work
+
+Every time Claude uses a tool, Claude Code checks whether any hooks are registered for the corresponding event. Matching hooks execute and can:
+
+- Inspect the tool name and input
+- Produce output that Claude sees (e.g. lint warnings)
+- Block the action with an error message
+- Approve or deny the tool use programmatically (for `PreToolUse` hooks)
+
+## Available hook events
+
+| Event | When it fires |
+|---|---|
+| `PreToolUse` | Before a tool executes. Can approve, block, or modify the tool input. |
+| `PostToolUse` | After a tool completes successfully. |
+| `Notification` | When Claude Code sends a user notification. |
+| `UserPromptSubmit` | When the user submits a message. |
+| `SessionStart` | When a new session begins. |
+| `SessionEnd` | When a session ends. |
+| `Stop` | When Claude stops generating (top-level). |
+| `SubagentStop` | When a subagent stops generating. |
+| `PreCompact` | Before context compaction runs. |
+| `PostCompact` | After context compaction completes. |
+| `TeammateIdle` | When a teammate agent becomes idle. |
+| `TaskCreated` | When a new task is created. |
+| `TaskCompleted` | When a task finishes. |
+
+## Hook configuration format
+
+Hooks are configured under the `hooks` key in any settings file. The value is a record keyed by event name. Each event maps to an array of **matchers**, and each matcher contains one or more hook commands.
+
+```json
+{
+  "hooks": {
+    "<EventName>": [
+      {
+        "matcher": "<optional pattern>",
+        "hooks": [
+          { "type": "command", "command": "<shell command>" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Matcher
+
+The optional `matcher` field filters hooks to specific tool names (e.g. `"Write"`, `"Bash"`). When omitted, the hook runs for all tools in that event. Matchers use the same permission-rule syntax as the `permissions` key — you can write `Bash(git *)` to match only git Bash commands.
+
+## Hook types
+
+### Command hook (shell)
+
+Runs a shell command. The tool input is passed as JSON via the `CLAUDE_TOOL_INPUT` environment variable and via stdin.
+
+```json
+{
+  "type": "command",
+  "command": "npm run lint -- $CLAUDE_FILE_PATHS",
+  "timeout": 30
+}
+```
+
+<ParamField path="type" type='"command"' required>
+  Must be `"command"`.
+</ParamField>
+
+<ParamField path="command" type="string" required>
+  The shell command to execute.
+</ParamField>
+
+<ParamField path="shell" type='"bash" | "powershell"'>
+  Shell interpreter. `"bash"` uses `$SHELL` (bash/zsh/sh). `"powershell"` uses `pwsh`. Defaults to `"bash"`.
+</ParamField>
+
+<ParamField path="if" type="string">
+  Permission-rule pattern to filter when this hook runs (e.g. `"Bash(git *)"` ). If the tool call does not match the pattern, the hook is skipped without spawning a process.
+</ParamField>
+
+<ParamField path="timeout" type="number">
+  Timeout in seconds for this command. Overrides the global default.
+</ParamField>
+
+<ParamField path="async" type="boolean">
+  When `true`, the hook runs in the background without blocking Claude.
+</ParamField>
+
+<ParamField path="once" type="boolean">
+  When `true`, the hook runs once and is automatically removed after execution.
+</ParamField>
+
+<ParamField path="statusMessage" type="string">
+  Custom message shown in the spinner while the hook runs.
+</ParamField>
+
+### HTTP hook
+
+POSTs the hook input JSON to an HTTP endpoint. Useful for logging, audit trails, and integrations with external services.
+
+```json
+{
+  "type": "http",
+  "url": "https://hooks.example.com/claude-events",
+  "headers": {
+    "Authorization": "Bearer $MY_TOKEN"
+  },
+  "allowedEnvVars": ["MY_TOKEN"],
+  "timeout": 10
+}
+```
+
+<ParamField path="type" type='"http"' required>
+  Must be `"http"`.
+</ParamField>
+
+<ParamField path="url" type="string" required>
+  URL to POST the hook input JSON to.
+</ParamField>
+
+<ParamField path="headers" type="object">
+  Additional headers. Values may reference environment variables with `$VAR_NAME` syntax. Only variables listed in `allowedEnvVars` are interpolated.
+</ParamField>
+
+<ParamField path="allowedEnvVars" type="string[]">
+  Explicit list of environment variable names that may be interpolated in header values. Required for env var interpolation to work.
+</ParamField>
+
+### Prompt hook (LLM evaluation)
+
+Evaluates a prompt using a language model. Useful for semantic validation — e.g. "check that the test output shows all tests passing."
+
+```json
+{
+  "type": "prompt",
+  "prompt": "Check that the file edited by $ARGUMENTS does not introduce console.log statements. Block if it does.",
+  "model": "claude-haiku-4-5",
+  "timeout": 30
+}
+```
+
+<ParamField path="type" type='"prompt"' required>
+  Must be `"prompt"`.
+</ParamField>
+
+<ParamField path="prompt" type="string" required>
+  Prompt to evaluate. Use `$ARGUMENTS` as a placeholder for the hook input JSON.
+</ParamField>
+
+<ParamField path="model" type="string">
+  Model to use (e.g. `"claude-sonnet-4-6"`). Defaults to the small fast model.
+</ParamField>
+
+### Agent hook (agentic verifier)
+
+Runs a full subagent to verify a condition. The agent can use tools to inspect the environment before returning an approve or block decision.
+
+```json
+{
+  "type": "agent",
+  "prompt": "Verify that unit tests ran and passed after the file change in $ARGUMENTS.",
+  "timeout": 60
+}
+```
+
+<ParamField path="type" type='"agent"' required>
+  Must be `"agent"`.
+</ParamField>
+
+<ParamField path="prompt" type="string" required>
+  What the agent should verify. Use `$ARGUMENTS` for the hook input JSON.
+</ParamField>
+
+<ParamField path="model" type="string">
+  Model for the agent. Defaults to Haiku.
+</ParamField>
+
+## Registering hooks
+
+Add hooks to any settings file. Use `/hooks` inside a session to manage them interactively:
+
+```bash
+/hooks
+```
+
+To add hooks manually, edit the appropriate settings file:
+
+```bash
+# User-level (applies to all projects)
+~/.claude/settings.json
+
+# Project-level (committed to git)
+.claude/settings.json
+
+# Local overrides (gitignored)
+.claude/settings.local.json
+```
+
+## Example hooks
+
+### Lint on file write
+
+Run ESLint automatically after every `Write` tool use that touches a `.ts` or `.js` file:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx eslint --fix $CLAUDE_FILE_PATHS 2>&1 | head -50",
+            "if": "Write(**.{ts,js})",
+            "statusMessage": "Running ESLint..."
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Run tests after editing source files
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npm test -- --passWithNoTests 2>&1 | tail -20",
+            "if": "Write(src/**)",
+            "async": true,
+            "statusMessage": "Running tests..."
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Block dangerous shell commands
+
+Use a `PreToolUse` hook to intercept Bash calls and block specific patterns:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo $CLAUDE_TOOL_INPUT | jq -r '.command' | grep -qE '^(rm -rf|DROP TABLE)' && echo '{\"continue\":false,\"stopReason\":\"Dangerous command blocked by hook\"}' || echo '{\"continue\":true}'",
+            "if": "Bash"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Log all tool uses to a file
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"$(date -Iseconds) $CLAUDE_TOOL_NAME: $CLAUDE_TOOL_INPUT\" >> ~/.claude/tool-log.jsonl",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Notify on session start
+
+Send a notification when a session begins:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "https://hooks.slack.com/services/YOUR/WEBHOOK",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+## Hook output
+
+Command hooks communicate back to Claude Code via stdout. Return a JSON object to influence behavior:
+
+```json
+{
+  "continue": true,
+  "suppressOutput": false,
+  "stopReason": "Optional message when continue is false",
+  "decision": "approve",
+  "reason": "Explanation shown to user",
+  "systemMessage": "Warning message shown in transcript"
+}
+```
+
+For `PreToolUse` hooks, the `hookSpecificOutput` field allows updating the tool input before execution:
+
+```json
+{
+  "continue": true,
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "allow",
+    "updatedInput": { "command": "git status" }
+  }
+}
+```
+
+<Note>
+  If a hook exits with a non-zero code or returns `{"continue": false}`, Claude Code treats it as a blocking error and shows the `stopReason` to the user.
+</Note>
+
+## Enterprise hook controls
+
+<ParamField path="allowManagedHooksOnly" type="boolean">
+  When `true` (set in managed settings), only hooks from managed settings run. User, project, and local hooks are ignored.
+</ParamField>
+
+<ParamField path="disableAllHooks" type="boolean">
+  Disable all hook and status-line execution entirely.
+</ParamField>
+
+<ParamField path="allowedHttpHookUrls" type="string[]">
+  Allowlist of URL patterns HTTP hooks may target. Supports `*` as a wildcard. When set, HTTP hooks with non-matching URLs are blocked.
+
+  ```json
+  { "allowedHttpHookUrls": ["https://hooks.internal.example.com/*"] }
+  ```
+</ParamField>

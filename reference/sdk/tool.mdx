@@ -1,0 +1,259 @@
+---
+title: "Custom Tools"
+description: "Define custom MCP tools that run in-process with the Claude Code SDK."
+---
+
+The Claude Code SDK lets you extend the agent with your own tools via the Model Context Protocol (MCP). Rather than running a separate MCP server process, you can define tools in TypeScript and register them as an in-process MCP server. The agent can call these tools just like any built-in tool — with full permission handling and streaming support.
+
+## tool()
+
+Defines a single custom MCP tool.
+
+```typescript
+function tool<Schema extends AnyZodRawShape>(
+  name: string,
+  description: string,
+  inputSchema: Schema,
+  handler: (args: InferShape<Schema>, extra: unknown) => Promise<CallToolResult>,
+  extras?: {
+    annotations?: ToolAnnotations
+    searchHint?: string
+    alwaysLoad?: boolean
+  },
+): SdkMcpToolDefinition<Schema>
+```
+
+<ParamField path="name" type="string" required>
+  Tool name as it appears to the model. Use `snake_case` to match MCP conventions (e.g. `'get_weather'`, `'run_tests'`).
+</ParamField>
+
+<ParamField path="description" type="string" required>
+  Natural language description of what the tool does. The model uses this description to decide when and how to call the tool — write it clearly and include any important caveats or limitations.
+</ParamField>
+
+<ParamField path="inputSchema" type="AnyZodRawShape" required>
+  A [Zod](https://zod.dev) object shape describing the tool's input parameters. Use `z.object({ ... })` fields directly (pass the shape, not the wrapped schema).
+
+  ```typescript
+  import { z } from 'zod'
+
+  // Pass the shape object, not z.object(shape)
+  const schema = {
+    query: z.string().describe('The search query'),
+    limit: z.number().optional().describe('Maximum results to return'),
+  }
+  ```
+</ParamField>
+
+<ParamField path="handler" type="(args: InferShape<Schema>, extra: unknown) => Promise<CallToolResult>" required>
+  Async function that executes the tool. Receives the validated input arguments typed according to the Zod schema.
+
+  Return a `CallToolResult` from `@modelcontextprotocol/sdk/types.js`:
+  ```typescript
+  { content: [{ type: 'text', text: 'result string' }] }
+  // or for errors:
+  { content: [{ type: 'text', text: 'error message' }], isError: true }
+  ```
+</ParamField>
+
+<ParamField path="extras" type="object">
+  Optional metadata for the tool.
+
+  <Expandable title="extras fields">
+    <ParamField path="annotations" type="ToolAnnotations">
+      MCP tool annotations controlling behavior hints. Fields include `readOnly`, `destructive`, and `openWorld`.
+    </ParamField>
+    <ParamField path="searchHint" type="string">
+      Hint used by the tool-discovery system when deciding whether to load this tool into context.
+    </ParamField>
+    <ParamField path="alwaysLoad" type="boolean">
+      When `true`, this tool is always included in the model's context regardless of the tool-discovery system's decisions.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+**Returns:** `SdkMcpToolDefinition<Schema>` — an opaque tool definition object to pass to `createSdkMcpServer()`.
+
+---
+
+## createSdkMcpServer()
+
+Creates an in-process MCP server from a set of tool definitions. The server runs within the same Node.js process as the SDK consumer — no subprocess, no stdio transport, no network overhead.
+
+<Note>
+If your SDK MCP tool handlers run longer than 60 seconds, set the `CLAUDE_CODE_STREAM_CLOSE_TIMEOUT` environment variable to a higher value.
+</Note>
+
+```typescript
+function createSdkMcpServer(options: {
+  name: string
+  version?: string
+  tools?: Array<SdkMcpToolDefinition<any>>
+}): McpSdkServerConfigWithInstance
+```
+
+<ParamField path="name" type="string" required>
+  Name for the MCP server. Visible in server status displays.
+</ParamField>
+
+<ParamField path="version" type="string">
+  Optional version string for the server (e.g. `'1.0.0'`).
+</ParamField>
+
+<ParamField path="tools" type="Array<SdkMcpToolDefinition<any>>">
+  Array of tool definitions created with `tool()`. The agent will have access to all listed tools.
+</ParamField>
+
+**Returns:** `McpSdkServerConfigWithInstance` — a server config object to pass to the `sdkMcpServers` option of `query()` or `SDKSessionOptions`.
+
+---
+
+## Registering tools with query()
+
+Pass the server config in the `sdkMcpServers` option:
+
+```typescript
+import { query, tool, createSdkMcpServer } from '@anthropic-ai/claude-code'
+import { z } from 'zod'
+
+const myTool = tool(
+  'get_file_stats',
+  'Returns the size and line count of a file.',
+  {
+    filePath: z.string().describe('Absolute path to the file'),
+  },
+  async ({ filePath }) => {
+    const { statSync } = await import('fs')
+    const { execSync } = await import('child_process')
+    const stats = statSync(filePath)
+    const lines = execSync(`wc -l < "${filePath}"`).toString().trim()
+    return {
+      content: [{ type: 'text', text: `Size: ${stats.size} bytes, Lines: ${lines}` }],
+    }
+  },
+)
+
+const server = createSdkMcpServer({
+  name: 'my-tools',
+  version: '1.0.0',
+  tools: [myTool],
+})
+
+const stream = query({
+  prompt: 'How many lines are in src/index.ts?',
+  options: {
+    cwd: '/path/to/project',
+    sdkMcpServers: [server],
+    model: 'claude-opus-4-5',
+  },
+})
+
+for await (const message of stream) {
+  if (message.type === 'result') {
+    console.log(message.result)
+  }
+}
+```
+
+---
+
+## Complete example
+
+The following example defines a custom database-query tool and a schema-inspection tool, registers them together, and runs an agent that can use both:
+
+```typescript
+import { query, tool, createSdkMcpServer } from '@anthropic-ai/claude-code'
+import { z } from 'zod'
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+
+// --- Tool 1: execute a read-only SQL query ---
+const sqlQueryTool = tool(
+  'sql_query',
+  'Executes a read-only SQL SELECT query against the application database and returns the results as JSON.',
+  {
+    query: z.string().describe('The SQL SELECT statement to execute'),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(1000)
+      .optional()
+      .describe('Maximum number of rows to return (default: 100)'),
+  },
+  async ({ query: sql, limit = 100 }): Promise<CallToolResult> => {
+    // Replace with your actual database client
+    try {
+      const rows = await fakeDatabaseQuery(sql, limit)
+      return {
+        content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }],
+      }
+    } catch (err) {
+      return {
+        content: [{ type: 'text', text: `Query error: ${err}` }],
+        isError: true,
+      }
+    }
+  },
+  {
+    annotations: { readOnly: true },
+  },
+)
+
+// --- Tool 2: list available tables ---
+const listTablesTool = tool(
+  'list_tables',
+  'Returns the names and row counts of all tables in the database.',
+  {},
+  async (): Promise<CallToolResult> => {
+    const tables = await fakeListTables()
+    return {
+      content: [{ type: 'text', text: JSON.stringify(tables, null, 2) }],
+    }
+  },
+  {
+    annotations: { readOnly: true },
+    alwaysLoad: true,
+  },
+)
+
+// --- Create the in-process MCP server ---
+const dbServer = createSdkMcpServer({
+  name: 'database-tools',
+  version: '1.0.0',
+  tools: [sqlQueryTool, listTablesTool],
+})
+
+// --- Run the agent with the custom tools ---
+async function main() {
+  const stream = query({
+    prompt: 'How many users signed up in the last 7 days? Show me the data.',
+    options: {
+      model: 'claude-opus-4-5',
+      sdkMcpServers: [dbServer],
+      permissionMode: 'acceptEdits',
+      maxTurns: 5,
+    },
+  })
+
+  for await (const message of stream) {
+    if (message.type === 'assistant') {
+      for (const block of message.message.content) {
+        if (block.type === 'text') process.stdout.write(block.text)
+      }
+    }
+    if (message.type === 'result') {
+      console.log(`\n\nDone in ${message.num_turns} turns.`)
+    }
+  }
+}
+
+main().catch(console.error)
+
+// Stubs — replace with real implementations
+async function fakeDatabaseQuery(sql: string, limit: number) {
+  return [{ user_id: 1, signup_date: '2026-03-25' }]
+}
+async function fakeListTables() {
+  return [{ name: 'users', row_count: 1024 }]
+}
+```

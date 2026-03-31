@@ -1,0 +1,130 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "Claude Code",
+  "projectDescription": "An agentic AI coding assistant that runs in your terminal, understands your codebase, and helps you code faster through natural language commands.",
+  "theme": "luma",
+  "primaryColor": "#848c8e",
+  "lightColor": "#11161e",
+  "darkColor": "#cfd0d2",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Usage",
+            "pages": [
+              "usage/interactive-mode",
+              "usage/slash-commands",
+              "usage/memory-and-context",
+              "usage/sessions"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/settings",
+              "configuration/permissions",
+              "configuration/mcp-servers",
+              "configuration/hooks"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/ide",
+              "integrations/github",
+              "integrations/voice"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/sdk",
+              "advanced/multi-agent",
+              "advanced/skills-and-plugins",
+              "advanced/automation"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Built-in Tools",
+            "pages": [
+              "reference/tools/overview",
+              "reference/tools/file-tools",
+              "reference/tools/bash",
+              "reference/tools/web-tools",
+              "reference/tools/mcp"
+            ]
+          },
+          {
+            "group": "SDK API",
+            "pages": [
+              "reference/sdk/overview",
+              "reference/sdk/query",
+              "reference/sdk/sessions",
+              "reference/sdk/tool"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Natural language coding assistant running directly in the terminal",
+    "Reads, edits, and writes files across your entire codebase",
+    "Executes bash commands and manages git workflows",
+    "MCP (Model Context Protocol) server integration for extensibility",
+    "Multi-agent and parallel task execution (swarm mode)",
+    "Session management with persistent conversation history",
+    "IDE integration (VS Code, JetBrains, and others)",
+    "Programmable SDK for embedding Claude Code in applications",
+    "Hooks system for custom pre/post tool execution logic",
+    "Skills and plugins for extending capabilities"
+  ],
+  "publicApiSurface": [
+    "query({ prompt, options }) — run a single agentic query",
+    "unstable_v2_createSession(options) — create a persistent multi-turn session",
+    "unstable_v2_resumeSession(sessionId, options) — resume an existing session",
+    "unstable_v2_prompt(message, options) — one-shot convenience function",
+    "listSessions(options) — list sessions with metadata",
+    "getSessionInfo(sessionId, options) — read metadata for a single session",
+    "getSessionMessages(sessionId, options) — read conversation messages",
+    "renameSession(sessionId, title, options) — rename a session",
+    "tagSession(sessionId, tag, options) — tag a session",
+    "forkSession(sessionId, options) — fork a session into a new branch",
+    "tool(name, description, schema, handler) — define a custom MCP tool",
+    "createSdkMcpServer(options) — create an in-process MCP server",
+    "claude — CLI binary entrypoint",
+    "/add-dir — add directories to context",
+    "/bug — report a bug",
+    "/clear — clear conversation history",
+    "/compact — compact conversation context",
+    "/config — manage configuration",
+    "/cost — view token usage and cost",
+    "/diff — view file diffs",
+    "/exit — exit Claude Code",
+    "/help — show help",
+    "/init — initialize a project",
+    "/mcp — manage MCP servers",
+    "/memory — manage memory",
+    "/model — switch models",
+    "/plan — enter plan mode",
+    "/review — code review",
+    "/session — manage sessions",
+    "/status — show status",
+    "/version — show version"
+  ]
+}
